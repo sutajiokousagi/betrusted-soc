@@ -25,17 +25,86 @@ from gateware import info
 from litex.soc.cores import gpio
 
 _io = [
-    ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),  # provisional
+
+    ("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")),
+    ("usbc_cc2", 0, Pins("E16"), IOStandard("LVCMOS33")),
+    ("vbus_div", 0, Pins("E12"), IOStandard("LVCMOS33")),
+    ("wifi_lpclk", 0, Pins("N15"), IOStandard("LVCMOS33")),
+]
+
+_io = [
+    ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),
 
     ("serial", 0,
-     Subsignal("tx", Pins("V6")), # provisional
-     Subsignal("rx", Pins("V7")), # provisional
+     Subsignal("tx", Pins("V6")),
+     Subsignal("rx", Pins("V7")),
      IOStandard("LVCMOS18"),
      ),
 
+    # Power control signals
     ("audio_on", 0, Pins("G13"), IOStandard("LVCMOS33")),
+    ("fpga_sys_on", 0, Pins("N13"), IOStandard("LVCMOS18")),
     ("noisebias_on", 0, Pins("A13"), IOStandard("LVCMOS33")),
+    ("allow_up5k_n", 0, Pins("U7"), IOStandard("LVCMOS18")),
+    ("pwr_s0", 0, Pins("U6"), IOStandard("LVCMOS18")),
+    ("pwr_s1", 0, Pins("L13"), IOStandard("LVCMOS18")),
+
+    # Noise generator
     ("noise_on", 0, Pins("P14", "R13"), IOStandard("LVCMOS18")),
+#    ("noise0", 0, Pins("B13"), IOStandard("LVCMOS33")), # these are analog
+#    ("noise1", 0, Pins("B14"), IOStandard("LVCMOS33")),
+
+    # Audio interface
+    ("au_clk1", 0, Pins("D14"), IOStandard("LVCMOS33")),
+    ("au_clk2", 0, Pins("F14"), IOStandard("LVCMOS33")),
+    ("au_mclk", 0, Pins("D18"), IOStandard("LVCMOS33")),
+    ("au_sdi1", 0, Pins("D12"), IOStandard("LVCMOS33")),
+    ("au_sdi2", 0, Pins("A15"), IOStandard("LVCMOS33")),
+    ("au_sdo1", 0, Pins("C13"), IOStandard("LVCMOS33")),
+    ("au_sync1", 0, Pins("B15"), IOStandard("LVCMOS33")),
+    ("au_sync2", 0, Pins("B17"), IOStandard("LVCMOS33")),
+#    ("ana_vn", 0, Pins("K9"), IOStandard("LVCMOS33")), # analog
+#    ("ana_vp", 0, Pins("J10"), IOStandard("LVCMOS33")),
+
+    # I2C1 bus -- to RTC and audio CODEC
+    ("i2c1_scl", 0, Pins("C14"), IOStandard("LVCMOS33")),
+    ("i2c1_sda", 0, Pins("A14"), IOStandard("LVCMOS33")),
+    # RTC interrupt
+    ("rtc_int1", 0, Pins("N5"), IOStandard("LVCMOS18")),
+
+    # COM interface to UP5K
+    ("com_cs", 0, Pins("T15"), IOStandard("LVCMOS18")),
+    ("com_irq", 0, Pins("M16"), IOStandard("LVCMOS18")),
+    ("com_miso", 0, Pins("P16"), IOStandard("LVCMOS18")),
+    ("com_mosi", 0, Pins("N18"), IOStandard("LVCMOS18")),
+    ("com_sclk", 0, Pins("R16"), IOStandard("LVCMOS18")),
+
+    # Top-side internal FPC header
+    ("gpio0", 0, Pins("B18"), IOStandard("LVCMOS33")),
+    ("gpio1", 0, Pins("D15"), IOStandard("LVCMOS33")),
+    ("gpio2", 0, Pins("A16"), IOStandard("LVCMOS33")),
+    ("gpio3", 0, Pins("B16"), IOStandard("LVCMOS33")),
+    ("gpio4", 0, Pins("D16"), IOStandard("LVCMOS33")),
+
+    # Keyboard scan matrix
+    ("kbd", 0,
+        Subsignal("key", Pins("F15" "E17" "G17" "E14" "E15" "H15" "G15" "H14"
+                              "H16" "H17" "E18" "F18" "G18" "E13" "H18" "F13"
+                              "H13" "J13" "K13"), IOStandard("LVCMOS33")),
+    ),
+
+    # LCD interface
+    ("lcd_sclk", 0, Pins("A17"), IOStandard("LVCMOS33")),
+    ("lcd_scs", 0, Pins("C18"), IOStandard("LVCMOS33")),
+    ("lcd_si", 0, Pins("D17"), IOStandard("LVCMOS33")),
+
+    # SD card (TF) interface
+    ("sdcard", 0,
+     Subsignal("data", Pins("J15 J14 K16 K14"), Misc("PULLUP True")),
+     Subsignal("cmd", Pins("J16"), Misc("PULLUP True")),
+     Subsignal("clk", Pins("G16")),
+     IOStandard("LVCMOS33"), Misc("SLEW=SLOW")
+     ),
 
     # SPI Flash
     ("spiflash_4x", 0,  # clock needs to be accessed through STARTUPE2
@@ -51,7 +120,32 @@ _io = [
      Subsignal("hold", Pins("M15")), # provisional
      IOStandard("LVCMOS18")
      ),
+    ("spiflash_8x", 0,  # clock needs to be accessed through STARTUPE2
+     Subsignal("cs_n", Pins("M13")),
+     Subsignal("dq", Pins("K17", "K18", "L14", "M15", "L17", "L18", "M14", "N14")),
+     Subsignal("dqs", Pins("R14")),
+     Subsignal("ecsn", Pins("L16")),
+     IOStandard("LVCMOS18")
+     ),
 
+    # SRAM
+    ("sram", 0,
+        Subsignal("a", Pins(
+            "V12 M5 P5 N4  V14 M3 R17 U15",
+            "M4  L6 K3 R18 U16 K1 R5  T2",
+            "U1  N1 L5 K2  M18 T6"),
+            IOStandard("LVCMOS18")),
+        Subsignal("ce_n", Pins("V5"), IOStandard("LVCMOS18")),
+        Subsignal("oe_n", Pins("U12"), IOStandard("LVCMOS18")),
+        Subsignal("we_n", Pins("K4"), IOStandard("LVCMOS18")),
+        Subsignal("zz_n", Pins("V17"), IOStandard("LVCMOS18")),
+        Subsignal("d", Pins(
+            "M2  R4  P2  L4  L1  M1  R1  P1 "
+            "U3  V2  V4  U2  N2  T1  K6  J6 "
+            "V16 V15 U17 U18 P17 T18 P18 M17 " 
+            "N3  T4  V13 P15 T14 R15 T3  R7 "), IOStandard("LVCMOS18")),
+        Subsignal("dm", Pins("V3 R2 T5 T13"), IOStandard("LVCMOS18")),
+    ),
 ]
 
 class Platform(XilinxPlatform):
