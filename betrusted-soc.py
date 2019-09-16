@@ -21,14 +21,21 @@ from migen.genlib.resetsync import AsyncResetSynchronizer
 from litex.soc.interconnect.csr import *
 from litex.soc.interconnect.csr_eventmanager import *
 
+from gateware import info
+from litex.soc.cores import gpio
+
 _io = [
-    ("clk10", 0, Pins("N15"), IOStandard("LVCMOS18")),  # provisional
+    ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),  # provisional
 
     ("serial", 0,
-     Subsignal("tx", Pins("P7")), # provisional
-     Subsignal("rx", Pins("U6")), # provisional
-     IOStandard("LVCMOS33"),
+     Subsignal("tx", Pins("V6")), # provisional
+     Subsignal("rx", Pins("V7")), # provisional
+     IOStandard("LVCMOS18"),
      ),
+
+    ("audio_on", 0, Pins("G13"), IOStandard("LVCMOS33")),
+    ("noisebias_on", 0, Pins("A13"), IOStandard("LVCMOS33")),
+    ("noise_on", 0, Pins("P14", "R13"), IOStandard("LVCMOS18")),
 
     # SPI Flash
     ("spiflash_4x", 0,  # clock needs to be accessed through STARTUPE2
@@ -48,7 +55,7 @@ _io = [
 ]
 
 class Platform(XilinxPlatform):
-    def __init__(self, toolchain="vivado", programmer="vivado", part="25"):
+    def __init__(self, toolchain="vivado", programmer="vivado", part="50"):
         part = "xc7s" + part + "-csga324-1il"
         XilinxPlatform.__init__(self, part, _io,
                                 toolchain=toolchain)
@@ -88,15 +95,15 @@ slow_clock = True
 
 class CRG(Module, AutoCSR):
     def __init__(self, platform):
-        refclk_freq = 10e6
+        refclk_freq = 12e6
 
-        clk10 = platform.request("clk10")
+        clk12 = platform.request("clk12")
         rst = Signal()
         self.clock_domains.cd_sys = ClockDomain()
 
         if slow_clock:
             self.specials += [
-                Instance("BUFG", i_I=clk10, o_O=self.cd_sys.clk),
+                Instance("BUFG", i_I=clk12, o_O=self.cd_sys.clk),
                 AsyncResetSynchronizer(self.cd_sys, rst),
             ]
 
@@ -112,10 +119,10 @@ class CRG(Module, AutoCSR):
             pll_locked = Signal()
             pll_fb = Signal()
             pll_sys = Signal()
-            clk10_distbuf = Signal()
+            clk12_distbuf = Signal()
 
             self.specials += [
-                Instance("BUFG", i_I=clk10, o_O=clk10_distbuf),
+                Instance("BUFG", i_I=clk12, o_O=clk12_distbuf),
                 # this allows PLLs/MMCMEs to be placed anywhere and reference the input clock
             ]
 
@@ -129,7 +136,7 @@ class CRG(Module, AutoCSR):
                          # VCO @ 800 MHz or 600 MHz
                          p_REF_JITTER1=0.01, p_CLKIN1_PERIOD=(1 / refclk_freq) * 1e9,
                          p_CLKFBOUT_MULT_F=60, p_DIVCLK_DIVIDE=1,
-                         i_CLKIN1=clk10_distbuf, i_CLKFBIN=pll_fb_bufg, o_CLKFBOUT=pll_fb,
+                         i_CLKIN1=clk12_distbuf, i_CLKFBIN=pll_fb_bufg, o_CLKFBOUT=pll_fb,
 
                          # 150 MHz - sysclk
                          p_CLKOUT0_DIVIDE_F=5, p_CLKOUT0_PHASE=0.0,
@@ -165,13 +172,6 @@ boot_offset = 0x1000000
 bios_size = 0x8000
 
 class BaseSoC(SoCCore):
-    csr_peripherals = [
-#        "dna",
-#        "xadc",
-        "cpu_or_bridge",
-    ]
-    csr_map_update(SoCCore.csr_map, csr_peripherals)
-
     mem_map = {
         "spiflash": 0x20000000,  # (default shadow @0xa0000000)
         "sram_ext": 0x40000000,
@@ -180,22 +180,36 @@ class BaseSoC(SoCCore):
 
     def __init__(self, platform, spiflash="spiflash_1x", **kwargs):
         if slow_clock:
-            clk_freq = int(10e6)
+            clk_freq = int(12e6)
         else:
             clk_freq = int(125e6)
 
-        kwargs['cpu_reset_address']=self.mem_map["spiflash"]+boot_offset
+#        kwargs['cpu_reset_address']=self.mem_map["spiflash"]+boot_offset
         SoCCore.__init__(self, platform, clk_freq,
                          integrated_rom_size=bios_size,
                          integrated_sram_size=0x20000,
                          ident="betrusted.io LiteX Base SoC",
-                         reserve_nmi_interrupt=False,
                          cpu_type="vexriscv",
                          **kwargs)
 
+        self.submodules.audio = gpio.GPIOOut(platform.request("audio_on"))
+        self.add_csr("audio")
+        self.submodules.noisebias = gpio.GPIOOut(platform.request("noisebias_on"))
+        self.add_csr("noisebias")
+        self.submodules.noise = gpio.GPIOOut(platform.request("noise_on"))
+        self.add_csr("noise")
+
         self.submodules.crg = CRG(platform)
+        self.add_csr("crg")
         self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/clk_freq)
 
+        self.platform.add_platform_command(
+            "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
+
+        self.submodules.info = info.Info(platform, self.__class__.__name__)
+        self.add_csr("info")
+
+"""
         # spi flash
         spiflash_pads = platform.request(spiflash)
         spiflash_pads.clk = Signal()
@@ -214,14 +228,10 @@ class BaseSoC(SoCCore):
         self.add_constant("SPIFLASH_SECTOR_SIZE", 0x10000)
         self.add_wb_slave(mem_decoder(self.mem_map["spiflash"]), self.spiflash.bus)
         self.add_memory_region(
-            "spiflash", self.mem_map["spiflash"] | self.shadow_base, 8*1024*1024)
+            "spiflash", self.mem_map["spiflash"] | self.shadow_base, 512*1024*1024)
 
-        self.flash_boot_address = 0x207b0000  # TODO: this is from XC100T
-
-        self.platform.add_platform_command(
-            "create_clock -name clk10 -period 100.0 [get_nets clk10]")
-
-
+        self.flash_boot_address = 0x207b0000
+"""
 """
         # SPI for flash already added above
         # SPI for network
