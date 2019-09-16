@@ -22,6 +22,7 @@ from litex.soc.interconnect.csr import *
 from litex.soc.interconnect.csr_eventmanager import *
 
 from gateware import info
+from gateware import sram_32
 from litex.soc.cores import gpio
 
 _io = [
@@ -130,7 +131,7 @@ _io = [
 
     # SRAM
     ("sram", 0,
-        Subsignal("a", Pins(
+        Subsignal("adr", Pins(
             "V12 M5 P5 N4  V14 M3 R17 U15",
             "M4  L6 K3 R18 U16 K1 R5  T2",
             "U1  N1 L5 K2  M18 T6"),
@@ -303,6 +304,15 @@ class BaseSoC(SoCCore):
         self.submodules.info = info.Info(platform, self.__class__.__name__)
         self.add_csr("info")
 
+        # "FLASH" as stand-in for RAM
+        self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), 1, 1)
+        self.register_mem("sram_ext", self.mem_map["sram_ext"],
+                  self.sram_ext.bus, size=0x1000000)
+
+        # S0 power enables SRAM CE/ZZ
+        self.comb += platform.request("pwr_s0", 0).eq(1)
+        # fpga_sys_on keeps the FPGA on
+        self.comb += platform.request("fpga_sys_on", 0).eq(1)
 """
         # spi flash
         spiflash_pads = platform.request(spiflash)
@@ -332,11 +342,6 @@ class BaseSoC(SoCCore):
         self.submodules.spi = SPIMaster(platform.request("spi"))
         # SPI for display
         self.submodules.spi_display = SPIMaster(platform.request("spi_display"))
-
-        # "FLASH" as stand-in for RAM
-        self.submodules.sram_ext = Sram32(platform.request("sram_ext"), 1, 1)
-        self.register_mem("sram_ext", self.mem_map["sram_ext"],
-                          self.sram_ext.bus, size=0x1000000)
 
         # GPIO for keyboard/user I/O
         self.submodules.gi = GPIOIn(platform.request("gpio_in", 0).gi)
