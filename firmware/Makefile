@@ -12,7 +12,7 @@ endif
 OBJECTS=        isr.o \
 		main.o
 
-CFLAGS += -I.
+CFLAGS += -I. -fstack-check
 
 all: firmware.bin
 

@@ -7,7 +7,6 @@
 #include <time.h>
 #include <generated/csr.h>
 #include <generated/mem.h>
-#include "flags.h"
 #include <console.h>
 #include <system.h>
 
@@ -25,7 +24,7 @@ int main(void)
 	puts("\nbetrusted.io software built "__DATE__" "__TIME__);
 
 	while(1) {
-	  ; // do nothing for now
+	  printf( "hello world\n" );
 	}
 
 	return 0;
