@@ -6,3 +6,5 @@ __pycache__/
 *.d
 *.o
 pycharm.env
+*.bin
+*.elf
