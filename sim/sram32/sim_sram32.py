@@ -90,6 +90,8 @@ class SimpleSim(SoCCore):
                          cpu_type="vexriscv",
                          **kwargs)
 
+        self.add_constant("BOOT_SIMULATION", 1) # add extra boot memory testing/characterization features to BIOS image
+
         # instantiate the clock module
         self.submodules.crg = CRG(platform, sim_config)
         self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/sim_config["sys_clk_freq"])
@@ -97,8 +99,9 @@ class SimpleSim(SoCCore):
         self.platform.add_platform_command(
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
 
-        # "FLASH" as stand-in for RAM
-        self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), 6, 6, 2)
+        # external SRAM
+        self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), 7, 6, 5)
+        self.add_csr("sram_ext")
         self.register_mem("sram_ext", self.mem_map["sram_ext"],
                   self.sram_ext.bus, size=0x1000000)
 
@@ -108,7 +111,8 @@ def generate_top():
     platform = Platform()
     soc = SimpleSim(platform)
     builder = Builder(soc, output_dir="./run", csr_csv="test/csr.csv")
-    builder.build(run=False)
+    vns = builder.build(run=False)
+    soc.do_exit(vns)
 #    platform.build(soc, build_dir="./run", run=False)  # run=False prevents synthesis from happening, but a top.v file gets kicked out
 
 # this generates a test bench wrapper verilog file, needed by the xilinx tools

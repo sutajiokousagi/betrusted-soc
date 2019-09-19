@@ -136,16 +136,16 @@ _io = [
             "M4  L6 K3 R18 U16 K1 R5  T2",
             "U1  N1 L5 K2  M18 T6"),
             IOStandard("LVCMOS18")),
-        Subsignal("ce_n", Pins("V5"), IOStandard("LVCMOS18")),
-        Subsignal("oe_n", Pins("U12"), IOStandard("LVCMOS18")),
-        Subsignal("we_n", Pins("K4"), IOStandard("LVCMOS18")),
-        Subsignal("zz_n", Pins("V17"), IOStandard("LVCMOS18")),
+        Subsignal("ce_n", Pins("V5"), IOStandard("LVCMOS18"), Misc("PULLUP True")),
+        Subsignal("oe_n", Pins("U12"), IOStandard("LVCMOS18"), Misc("PULLUP True")),
+        Subsignal("we_n", Pins("K4"), IOStandard("LVCMOS18"), Misc("PULLUP True")),
+        Subsignal("zz_n", Pins("V17"), IOStandard("LVCMOS18"), Misc("PULLUP True")),
         Subsignal("d", Pins(
             "M2  R4  P2  L4  L1  M1  R1  P1 "
             "U3  V2  V4  U2  N2  T1  K6  J6 "
             "V16 V15 U17 U18 P17 T18 P18 M17 " 
             "N3  T4  V13 P15 T14 R15 T3  R7 "), IOStandard("LVCMOS18")),
-        Subsignal("dm", Pins("V3 R2 T5 T13"), IOStandard("LVCMOS18")),
+        Subsignal("dm_n", Pins("V3 R2 T5 T13"), IOStandard("LVCMOS18")),
     ),
 ]
 
@@ -186,7 +186,7 @@ class Platform(XilinxPlatform):
     def do_finalize(self, fragment):
         XilinxPlatform.do_finalize(self, fragment)
 
-slow_clock = True
+slow_clock = False
 
 class CRG(Module, AutoCSR):
     def __init__(self, platform):
@@ -228,13 +228,13 @@ class CRG(Module, AutoCSR):
                          p_STARTUP_WAIT="FALSE", o_LOCKED=pll_locked,
                          p_BANDWIDTH="OPTIMIZED",
 
-                         # VCO @ 800 MHz or 600 MHz
+                         # VCO @ 600MHz  (600-1200 range for -1LI)
                          p_REF_JITTER1=0.01, p_CLKIN1_PERIOD=(1 / refclk_freq) * 1e9,
-                         p_CLKFBOUT_MULT_F=60, p_DIVCLK_DIVIDE=1,
+                         p_CLKFBOUT_MULT_F=50.0, p_DIVCLK_DIVIDE=1,
                          i_CLKIN1=clk12_distbuf, i_CLKFBIN=pll_fb_bufg, o_CLKFBOUT=pll_fb,
 
-                         # 150 MHz - sysclk
-                         p_CLKOUT0_DIVIDE_F=5, p_CLKOUT0_PHASE=0.0,
+                         # 100 MHz - sysclk
+                         p_CLKOUT0_DIVIDE_F=6.0, p_CLKOUT0_PHASE=0.0,
                          o_CLKOUT0=pll_sys,
 
                          # DRP
@@ -277,7 +277,7 @@ class BaseSoC(SoCCore):
         if slow_clock:
             clk_freq = int(12e6)
         else:
-            clk_freq = int(125e6)
+            clk_freq = int(100e6)
 
 #        kwargs['cpu_reset_address']=self.mem_map["spiflash"]+boot_offset
         SoCCore.__init__(self, platform, clk_freq,
@@ -300,17 +300,29 @@ class BaseSoC(SoCCore):
 
         self.platform.add_platform_command(
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
+        self.platform.add_platform_command(
+            "create_generated_clock -name sysclk -source [get_pins MMCME2_ADV/CLKIN1] -multiply_by 50 -divide_by 6 -add -master_clock clk12 [get_pins MMCME2_ADV/CLKOUT0]"
+        )
 
         self.submodules.info = info.Info(platform, self.__class__.__name__)
         self.add_csr("info")
+        self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
 
-        # "FLASH" as stand-in for RAM
-        self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), 1, 1)
+        # external SRAM
+        self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=5)
+        self.add_csr("sram_ext")
         self.register_mem("sram_ext", self.mem_map["sram_ext"],
                   self.sram_ext.bus, size=0x1000000)
+        # constraint so a total of one extra clock period is consumed in routing delays (split 5/5 evenly on in and out)
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks {{sysclk}}] -min -add_delay 5.0 [get_ports {{sram_d[*]}}]")
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_d[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -min -add_delay 0.0 [get_ports {{sram_adr[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_adr[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -min -add_delay 0.0 [get_ports {{sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
 
         # S0 power enables SRAM CE/ZZ
-        self.comb += platform.request("pwr_s0", 0).eq(1)
+        self.comb += platform.request("pwr_s0", 0).eq(~ResetSignal())  # ensure SRAM isolation during reset (CE/ZZ = 1 by pull-up resistors)
         # fpga_sys_on keeps the FPGA on
         self.comb += platform.request("fpga_sys_on", 0).eq(1)
 """
