@@ -301,7 +301,7 @@ class BaseSoC(SoCCore):
         self.platform.add_platform_command(
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
         self.platform.add_platform_command(
-            "create_generated_clock -name sysclk -source [get_pins MMCME2_ADV/CLKIN1] -multiply_by 50 -divide_by 6 -add -master_clock clk12 [get_pins MMCME2_ADV/CLKOUT0]"
+            "create_generated_clock -name sys_clk -source [get_pins MMCME2_ADV/CLKIN1] -multiply_by 50 -divide_by 6 -add -master_clock clk12 [get_pins MMCME2_ADV/CLKOUT0]"
         )
 
         self.submodules.info = info.Info(platform, self.__class__.__name__)
@@ -314,13 +314,21 @@ class BaseSoC(SoCCore):
         self.register_mem("sram_ext", self.mem_map["sram_ext"],
                   self.sram_ext.bus, size=0x1000000)
         # constraint so a total of one extra clock period is consumed in routing delays (split 5/5 evenly on in and out)
-        self.platform.add_platform_command("set_input_delay -clock [get_clocks {{sysclk}}] -min -add_delay 5.0 [get_ports {{sram_d[*]}}]")
-        self.platform.add_platform_command("set_input_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_d[*]}}]")
-        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -min -add_delay 0.0 [get_ports {{sram_adr[*] sram_d[*]}}]")
-        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_adr[*] sram_d[*]}}]")
-        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -min -add_delay 0.0 [get_ports {{sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
-        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
-
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks sys_clk] -min -add_delay 5.0 [get_ports {{sram_d[*]}}]")
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks sys_clk] -max -add_delay 5.0 [get_ports {{sram_d[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks sys_clk] -min -add_delay 0.0 [get_ports {{sram_adr[*] sram_d[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks sys_clk] -max -add_delay 4.5 [get_ports {{sram_adr[*] sram_d[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
+        # ODDR falling edge ignore
+        self.platform.add_platform_command("set_false_path -fall_from [get_clocks sys_clk] -through [get_ports {{sram_d[*] sram_adr[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
+        self.platform.add_platform_command("set_false_path -fall_to [get_clocks sys_clk] -through [get_ports {{sram_d[*]}}]")
+        self.platform.add_platform_command("set_false_path -fall_from [get_clocks sys_clk] -through [get_nets sram_ext_load]")
+        self.platform.add_platform_command("set_false_path -fall_to [get_clocks sys_clk] -through [get_nets sram_ext_load]")
+        self.platform.add_platform_command("set_false_path -rise_from [get_clocks sys_clk] -fall_to [get_clocks sys_clk]")  # sort of a big hammer but should be OK
+        # reset ignore
+        self.platform.add_platform_command("set_false_path -through [get_nets sys_rst]")
+        # relax OE driver constraint (it's OK if it is a bit late, and it's an async path from fabric to output so it will be late)
+        self.platform.add_platform_command("set_multicycle_path 2 -setup -through [get_pins sram_ext_sync_oe_n_reg/Q]")
+        self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins sram_ext_sync_oe_n_reg/Q]")
         # S0 power enables SRAM CE/ZZ
         self.comb += platform.request("pwr_s0", 0).eq(~ResetSignal())  # ensure SRAM isolation during reset (CE/ZZ = 1 by pull-up resistors)
         # fpga_sys_on keeps the FPGA on
