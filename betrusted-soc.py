@@ -309,15 +309,15 @@ class BaseSoC(SoCCore):
         self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
 
         # external SRAM
-        self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=5)
+        self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=3)
         self.add_csr("sram_ext")
         self.register_mem("sram_ext", self.mem_map["sram_ext"],
                   self.sram_ext.bus, size=0x1000000)
         # constraint so a total of one extra clock period is consumed in routing delays (split 5/5 evenly on in and out)
         self.platform.add_platform_command("set_input_delay -clock [get_clocks {{sysclk}}] -min -add_delay 5.0 [get_ports {{sram_d[*]}}]")
         self.platform.add_platform_command("set_input_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_d[*]}}]")
-        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -min -add_delay 0.0 [get_ports {{sram_adr[*]}}]")
-        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_adr[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -min -add_delay 0.0 [get_ports {{sram_adr[*] sram_d[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_adr[*] sram_d[*]}}]")
         self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -min -add_delay 0.0 [get_ports {{sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
         self.platform.add_platform_command("set_output_delay -clock [get_clocks {{sysclk}}] -max -add_delay 5.0 [get_ports {{sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
 

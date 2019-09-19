@@ -132,7 +132,7 @@ class Sram32(Module, AutoCSR):
                       counter_en.eq(1),
                       NextValue(last_page_adr,self.bus.adr),
                       NextValue(last_cycle_was_rd, 1),
-                      If( (self.bus.adr[2:last_page_adr.nbits] == last_page_adr[2:last_page_adr.nbits]) & last_cycle_was_rd, # supposed to be 4:nbits??
+                      If( (self.bus.adr[3:last_page_adr.nbits] == last_page_adr[3:last_page_adr.nbits]) & last_cycle_was_rd, # supposed to be 4:nbits??
                         NextState("RD"),
                         NextValue(counter_limit, page_rd_timing),
                       ).Else(
