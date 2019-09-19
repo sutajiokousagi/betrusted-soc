@@ -309,6 +309,7 @@ class BaseSoC(SoCCore):
         self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
 
         # external SRAM
+        # Note that page_rd_timing=2 works, but is a slight overclock on RAM. Cache fill time goes from 436ns to 368ns for 8 words.
         self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=3)
         self.add_csr("sram_ext")
         self.register_mem("sram_ext", self.mem_map["sram_ext"],
