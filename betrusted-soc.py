@@ -7,6 +7,7 @@ LX_DEPENDENCIES = ["riscv", "vivado"]
 
 # Import lxbuildenv to integrate the deps/ directory
 import lxbuildenv
+import argparse
 
 from migen import *
 from litex.build.generic_platform import *
@@ -25,7 +26,7 @@ from gateware import info
 from gateware import sram_32
 from litex.soc.cores import gpio
 
-# import lxsocdoc
+import lxsocdoc
 
 _io = [
 
@@ -285,7 +286,7 @@ class BaseSoC(SoCCore):
         SoCCore.__init__(self, platform, clk_freq,
                          integrated_rom_size=bios_size,
                          integrated_sram_size=0x20000,
-                         ident="betrusted.io LiteX Base SoC",
+#                         ident="betrusted.io LiteX Base SoC",
                          cpu_type="vexriscv",
                          **kwargs)
 
@@ -383,13 +384,30 @@ class BaseSoC(SoCCore):
 """
 
 def main():
+    if os.environ['PYTHONHASHSEED'] != "1":
+        print( "PYTHONHASHEED must be set to 1 for consistent validation results. Failing to set this results in non-deterministic compilation results")
+        exit()
+
+    parser = argparse.ArgumentParser(description="Build the Betrusted SoC")
+    parser.add_argument(
+        "-D", "--document-only", default=False, action="store_true", help="Build docs only"
+    )
+
+    args = parser.parse_args()
+    compile_gateware = True
+    compile_software = True
+
+    if args.document_only:
+        compile_gateware = False
+        compile_software = False
+
     platform = Platform()
     soc = BaseSoC(platform)
-    builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv")
+    builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv", compile_software=compile_software, compile_gateware=compile_gateware)
     vns = builder.build()
     soc.do_exit(vns)
-#    lxsocdoc.generate_docs(soc, "build/documentation")
-#    lxsocdoc.generate_svd(soc, "build/software")
+    lxsocdoc.generate_docs(soc, "build/documentation")
+    lxsocdoc.generate_svd(soc, "build/software")
 
 if __name__ == "__main__":
     main()
