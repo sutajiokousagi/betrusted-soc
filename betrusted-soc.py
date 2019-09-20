@@ -286,7 +286,7 @@ class BaseSoC(SoCCore):
         SoCCore.__init__(self, platform, clk_freq,
                          integrated_rom_size=bios_size,
                          integrated_sram_size=0x20000,
-#                         ident="betrusted.io LiteX Base SoC",
+                         ident="betrusted.io LiteX Base SoC",
                          cpu_type="vexriscv",
                          **kwargs)
 
