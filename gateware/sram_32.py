@@ -8,8 +8,12 @@ class Sram32(Module, AutoCSR):
     def __init__(self, pads, rd_timing, wr_timing, page_rd_timing):
         self.bus = wishbone.Interface()
 
-        config_status = self.config_status = CSRStatus(32)
-        read_config = self.read_config = CSRStorage(1)
+        config_status = self.config_status = CSRStatus(fields=[
+            CSRField("mode", size=32, description="The current configuration mode of the SRAM")
+        ])
+        read_config = self.read_config = CSRStorage(fields=[
+            CSRField("trigger", size=1, description="Writing to this bit triggers the SRAM mode status read update", pulse=True)
+        ])
 
         ###
         # min 150us, at 100MHz this is 15,000 cycles
@@ -177,7 +181,7 @@ class Sram32(Module, AutoCSR):
 
         fsm.act("IDLE",
             NextValue(config, 0),
-            If(read_config.re,
+            If(read_config.fields.trigger,
               NextValue(config_override, 1),
               NextState("CONFIG_READ"),
             ),
@@ -255,7 +259,7 @@ class Sram32(Module, AutoCSR):
                 NextValue(config_ce_n, 0),
                 NextValue(config_oe_n, 0),
                 If(counter_done,
-                   NextValue(config_status.status,data.i),
+                   NextValue(config_status.fields.mode, data.i),
                    NextState("IDLE"),
                    NextValue(config_ce_n, 1), # should be 5ns min high time
                    NextValue(config_oe_n, 1),

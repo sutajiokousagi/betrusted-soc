@@ -25,6 +25,8 @@ from gateware import info
 from gateware import sram_32
 from litex.soc.cores import gpio
 
+# import lxsocdoc
+
 _io = [
 
     ("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")),
@@ -386,6 +388,8 @@ def main():
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv")
     vns = builder.build()
     soc.do_exit(vns)
+#    lxsocdoc.generate_docs(soc, "build/documentation")
+#    lxsocdoc.generate_svd(soc, "build/software")
 
 if __name__ == "__main__":
     main()
