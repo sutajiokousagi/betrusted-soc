@@ -29,14 +29,6 @@ from litex.soc.cores import gpio
 import lxsocdoc
 
 _io = [
-
-    ("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")),
-    ("usbc_cc2", 0, Pins("E16"), IOStandard("LVCMOS33")),
-    ("vbus_div", 0, Pins("E12"), IOStandard("LVCMOS33")),
-    ("wifi_lpclk", 0, Pins("N15"), IOStandard("LVCMOS33")),
-]
-
-_io = [
     ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),
 
     ("serial", 0,
@@ -44,6 +36,11 @@ _io = [
      Subsignal("rx", Pins("V7")),
      IOStandard("LVCMOS18"),
      ),
+
+    #("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")), # analog
+    #("usbc_cc2", 0, Pins("E16"), IOStandard("LVCMOS33")), # analog
+    # ("vbus_div", 0, Pins("E12"), IOStandard("LVCMOS33")), # analog
+    ("wifi_lpclk", 0, Pins("N15"), IOStandard("LVCMOS18")),
 
     # Power control signals
     ("audio_on", 0, Pins("G13"), IOStandard("LVCMOS33")),
@@ -406,7 +403,7 @@ def main():
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv", compile_software=compile_software, compile_gateware=compile_gateware)
     vns = builder.build()
     soc.do_exit(vns)
-    lxsocdoc.generate_docs(soc, "build/documentation")
+    lxsocdoc.generate_docs(soc, "build/documentation", note_pulses=True)
     lxsocdoc.generate_svd(soc, "build/software")
 
 if __name__ == "__main__":
