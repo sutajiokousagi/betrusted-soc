@@ -24,6 +24,7 @@ from litex.soc.interconnect.csr_eventmanager import *
 
 from gateware import info
 from gateware import sram_32
+from gateware import memlcd
 from litex.soc.cores import gpio
 
 import lxsocdoc
@@ -95,9 +96,11 @@ _io = [
     ),
 
     # LCD interface
-    ("lcd_sclk", 0, Pins("A17"), IOStandard("LVCMOS33")),
-    ("lcd_scs", 0, Pins("C18"), IOStandard("LVCMOS33")),
-    ("lcd_si", 0, Pins("D17"), IOStandard("LVCMOS33")),
+    ("lcd", 0,
+        Subsignal("sclk", Pins("A17"), IOStandard("LVCMOS33")),
+        Subsignal("scs", Pins("C18"), IOStandard("LVCMOS33")),
+        Subsignal("si", Pins("D17"), IOStandard("LVCMOS33")),
+     ),
 
     # SD card (TF) interface
     ("sdcard", 0,
@@ -270,6 +273,7 @@ class BaseSoC(SoCCore):
     mem_map = {
         "spiflash": 0x20000000,  # (default shadow @0xa0000000)
         "sram_ext": 0x40000000,
+        "memlcd": 0x50000000,
     }
     mem_map.update(SoCCore.mem_map)
 
@@ -332,6 +336,12 @@ class BaseSoC(SoCCore):
         self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins sram_ext_sync_oe_n_reg/Q]")
         # S0 power enables SRAM CE/ZZ
         self.comb += platform.request("pwr_s0", 0).eq(~ResetSignal())  # ensure SRAM isolation during reset (CE/ZZ = 1 by pull-up resistors)
+
+        # LCD interface
+        self.submodules.memlcd = memlcd.Memlcd(platform.request("lcd"))
+        self.add_csr("memlcd")
+        self.register_mem("memlcd", self.mem_map["memlcd"], self.memlcd.bus, size=self.memlcd.fb_depth*4)
+
         # fpga_sys_on keeps the FPGA on
         self.comb += platform.request("fpga_sys_on", 0).eq(1)
 """
