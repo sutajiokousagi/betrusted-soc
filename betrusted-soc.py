@@ -97,9 +97,9 @@ _io = [
 
     # LCD interface
     ("lcd", 0,
-        Subsignal("sclk", Pins("A17"), IOStandard("LVCMOS33")),
-        Subsignal("scs", Pins("C18"), IOStandard("LVCMOS33")),
-        Subsignal("si", Pins("D17"), IOStandard("LVCMOS33")),
+        Subsignal("sclk", Pins("A17"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")),
+        Subsignal("scs", Pins("C18"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")),
+        Subsignal("si", Pins("D17"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")),
      ),
 
     # SD card (TF) interface

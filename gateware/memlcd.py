@@ -266,20 +266,30 @@ class Memlcd(Module, AutoCSR):
         self.comb += If(fetch_dirty, pixadr_rd.eq( (update_addr + bytes_per_line - 4)[2:] )
             ).Else(pixadr_rd.eq( (update_addr + pixcount[3:])[2:] ))
 
+        scs_cnt = Signal(max=200)
         fsm_phy.act("IDLE",
-            NextValue(scs, 0),
             NextValue(si, 0),
             NextValue(linedone, 0),
             If(sendline,
-               NextState("MODELINE"),
+               NextValue(scs, 1),
+               NextValue(scs_cnt, 200), # 2 us setup
+               NextState("SCS_SETUP"),
                NextValue(pixcount, 16),
                NextValue(modeshift, Cat(mode, update_line)),
+            ).Else(
+                NextValue(scs, 0)
+            )
+        )
+        fsm_phy.act("SCS_SETUP",
+            If(scs_cnt > 0,
+               NextValue(scs_cnt, scs_cnt - 1)
+            ).Else(
+                NextState("MODELINE")
             )
         )
         fsm_phy.act("MODELINE",
             If(pixcount > 0,
                NextValue(modeshift, modeshift[1:]),
-               NextValue(scs, 1),
                NextValue(si, modeshift[0]),
                NextValue(pixcount, pixcount - 1),
                bitreq.eq(1),
@@ -306,9 +316,27 @@ class Memlcd(Module, AutoCSR):
                bitreq.eq(1),
                NextState("DATAWAIT"),
             ).Else(
-                NextState("IDLE"),
-                NextValue(linedone, 1),
+                NextState("SCS_HOLD"),
+                NextValue(si, 0),
+                NextValue(scs_cnt, 100), # 1 us hold
             )
+        )
+        fsm_phy.act("SCS_HOLD",
+                If(scs_cnt > 0,
+                   NextValue(scs_cnt, scs_cnt - 1)
+                ).Else(
+                   NextValue(scs, 0),
+                   NextState("SCS_LOW"),
+                   NextValue(scs_cnt, 100), # 1us minimum low time
+                )
+        )
+        fsm_phy.act("SCS_LOW",
+                If(scs_cnt > 0,
+                   NextValue(scs_cnt, scs_cnt - 1)
+                ).Else(
+                   NextValue(linedone, 1),
+                   NextState("IDLE")
+                )
         )
         fsm_phy.act("DATAWAIT",
             If(bitack, NextState("DATA"))
