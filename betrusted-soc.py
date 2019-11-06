@@ -75,11 +75,13 @@ _io = [
     ("rtc_int1", 0, Pins("N5"), IOStandard("LVCMOS18")),
 
     # COM interface to UP5K
-    ("com_cs", 0, Pins("T15"), IOStandard("LVCMOS18")),
+    ("com", 0,
+        Subsignal("csn", Pins("T15"), IOStandard("LVCMOS18")),
+        Subsignal("miso", Pins("P16"), IOStandard("LVCMOS18")),
+        Subsignal("mosi", Pins("N18"), IOStandard("LVCMOS18")),
+        Subsignal("sclk", Pins("R16"), IOStandard("LVCMOS18")),
+     ),
     ("com_irq", 0, Pins("M16"), IOStandard("LVCMOS18")),
-    ("com_miso", 0, Pins("P16"), IOStandard("LVCMOS18")),
-    ("com_mosi", 0, Pins("N18"), IOStandard("LVCMOS18")),
-    ("com_sclk", 0, Pins("R16"), IOStandard("LVCMOS18")),
 
     # Top-side internal FPC header
     ("gpio0", 0, Pins("B18"), IOStandard("LVCMOS33")),
