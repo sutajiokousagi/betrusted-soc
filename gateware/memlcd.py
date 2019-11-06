@@ -174,7 +174,7 @@ class Memlcd(Module, AutoCSR):
                 return a[decoder_offset:32-decoder_offset] == 0  # no aliasing in the block
         self.submodules.wb_con = wishbone.Decoder(self.bus, [(slave_filter, self.wb_sram_if.bus)], register=True)
 
-        self.command = CSRStorage(1, fields=[
+        self.command = CSRStorage(2, fields=[
             CSRField("UpdateDirty", description="Write a ``1`` to flush dirty lines to the LCD", pulse=True),
             CSRField("UpdateAll", description="Update full screen regardless of tag state")
         ])
