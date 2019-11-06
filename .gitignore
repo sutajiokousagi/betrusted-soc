@@ -8,3 +8,5 @@ __pycache__/
 pycharm.env
 *.bin
 *.elf
+*.jou
+*.log
