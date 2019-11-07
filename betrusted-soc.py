@@ -316,6 +316,10 @@ class BaseSoC(SoCCore):
         self.platform.add_platform_command(
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
         self.platform.add_platform_command(
+            "create_clock -name sys_clk -period 10.0 [get_nets sys_clk]")
+        self.platform.add_platform_command(
+            "create_clock -name spi_clk -period 41.6666 [get_nets spi_clk]")
+        self.platform.add_platform_command(
             "create_generated_clock -name sys_clk -source [get_pins MMCME2_ADV/CLKIN1] -multiply_by 50 -divide_by 6 -add -master_clock clk12 [get_pins MMCME2_ADV/CLKOUT0]"
         )
 
@@ -363,6 +367,9 @@ class BaseSoC(SoCCore):
         # up5k tsu = -0.5ns, th = 5.55ns, so constraining relative delays to about 14ns should do it?
         self.platform.add_platform_command("set_input_delay -clock [get_clocks spi_clk] -min -add_delay 14.0 [get_ports {{com_miso}}]")
         self.platform.add_platform_command("set_output_delay -clock [get_clocks spi_clk] -min -add_delay 14.0 [get_ports {{com_mosi com_csn}}]")
+        # cross domain clocking is handled with explicit software barrires, or with multiregs
+        self.platform.add_false_path_constraints(self.crg.cd_sys.clk, self.crg.cd_spi.clk)
+        self.platform.add_false_path_constraints(self.crg.cd_spi.clk, self.crg.cd_sys.clk)
 
 """
         # spi flash
