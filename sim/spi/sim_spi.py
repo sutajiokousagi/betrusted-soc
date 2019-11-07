@@ -26,8 +26,10 @@ from gateware import sram_32
 sim_config = {
     # freqs
     "input_clk_freq": 12e6,
-    "sys_clk_freq": 100e6,
-    "spi_clk_freq": 50e6,
+#    "sys_clk_freq": 12e6,  # UP5K-side
+#    "spi_clk_freq": 24e6,
+    "sys_clk_freq": 100e6,  # Artix-side
+    "spi_clk_freq": 25e6,
 }
 
 
@@ -48,12 +50,20 @@ _io = [
      Subsignal("si", Pins("D17"), IOStandard("LVCMOS33")),
      ),
 
-    # COM to UP5K
+    # COM to UP5K (maste0)
     ("com", 0,
      Subsignal("csn", Pins("T15"), IOStandard("LVCMOS18")),
      Subsignal("miso", Pins("P16"), IOStandard("LVCMOS18")),
      Subsignal("mosi", Pins("N18"), IOStandard("LVCMOS18")),
      Subsignal("sclk", Pins("R16"), IOStandard("LVCMOS18")),
+     ),
+
+    # slave interface for testing UP5K side
+    ("slave", 0,
+     Subsignal("csn", Pins("dummy0")),
+     Subsignal("miso", Pins("dummy1")),
+     Subsignal("mosi", Pins("dummy2")),
+     Subsignal("sclk", Pins("dummy3")),
      ),
 
     # SRAM
@@ -124,6 +134,9 @@ class SimpleSim(SoCCore):
         self.submodules.spimaster = spi.SpiMaster(platform.request("com"))
         self.add_csr("spimaster")
 
+        self.submodules.spislave = spi.SpiSlave(platform.request("slave"))
+        self.add_csr("spislave")
+
         # external SRAM to make BIOS build happy
         self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=2)
         self.add_csr("sram_ext")
@@ -152,7 +165,7 @@ reg clk12;
 initial clk12 = 1'b1;
 always #41.16666 clk12 = ~clk12;
 
-reg miso;
+wire miso;
 wire sclk;
 wire csn;
 wire mosi;
@@ -163,16 +176,21 @@ top dut (
     .com_sclk(sclk),
     .com_mosi(mosi),
     .com_miso(miso),
-    .com_csn(csn)
+    .com_csn(csn),
+    
+    .slave_sclk(sclk),
+    .slave_mosi(mosi),
+    .slave_miso(miso),
+    .slave_csn(csn)
 );
 
-reg [15:0] value;
-initial miso = 1'b0;
-initial value = 16'ha503;
-always @(posedge sclk) begin
-   miso <= value[15];
-   value <= {value[14:0],value[15]};    
-end
+// reg [15:0] value;
+// initial miso = 1'b0;
+// initial value = 16'ha503;
+// always @(posedge sclk) begin
+//    miso <= value[15];
+//    value <= {value[14:0],value[15]};    
+// end
 
 endmodule""")
     f.close()

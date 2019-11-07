@@ -25,6 +25,7 @@ from litex.soc.interconnect.csr_eventmanager import *
 from gateware import info
 from gateware import sram_32
 from gateware import memlcd
+from gateware import spi
 from litex.soc.cores import gpio
 
 import lxsocdoc
@@ -200,6 +201,7 @@ class CRG(Module, AutoCSR):
         clk12 = platform.request("clk12")
         rst = Signal()
         self.clock_domains.cd_sys = ClockDomain()
+        self.clock_domains.cd_spi = ClockDomain()
 
         if slow_clock:
             self.specials += [
@@ -219,6 +221,7 @@ class CRG(Module, AutoCSR):
             pll_locked = Signal()
             pll_fb = Signal()
             pll_sys = Signal()
+            pll_spiclk = Signal()
             clk12_distbuf = Signal()
 
             self.specials += [
@@ -242,6 +245,10 @@ class CRG(Module, AutoCSR):
                          p_CLKOUT0_DIVIDE_F=6.0, p_CLKOUT0_PHASE=0.0,
                          o_CLKOUT0=pll_sys,
 
+                         # 24 MHz - spiclk
+                         p_CLKOUT1_DIVIDE=25, p_CLKOUT1_PHASE=0,
+                         o_CLKOUT1=pll_spiclk,
+
                          # DRP
                          i_DCLK=ClockSignal(),
                          i_DWE=self._mmcm_write.re,
@@ -257,8 +264,10 @@ class CRG(Module, AutoCSR):
 
                 # global distribution buffers
                 Instance("BUFG", i_I=pll_sys, o_O=self.cd_sys.clk),
+                Instance("BUFG", i_I=pll_spiclk, o_O=self.cd_spi.clk),
 
                 AsyncResetSynchronizer(self.cd_sys, rst | ~pll_locked),
+                AsyncResetSynchronizer(self.cd_spi, rst | ~pll_locked),
             ]
             self.sync += [
                 If(self._mmcm_read.re | self._mmcm_write.re,
@@ -346,6 +355,15 @@ class BaseSoC(SoCCore):
 
         # fpga_sys_on keeps the FPGA on
         self.comb += platform.request("fpga_sys_on", 0).eq(1)
+
+        # COM SPI interface
+        self.submodules.com = spi.SpiMaster(platform.request("com"))
+        self.add_csr("com")
+        # 20.83ns = 1/2 of 24MHz clock, we are doing falling-to-rising timing
+        # up5k tsu = -0.5ns, th = 5.55ns, so constraining relative delays to about 14ns should do it?
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks spi_clk] -min -add_delay 14.0 [get_ports {{com_miso}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks spi_clk] -min -add_delay 14.0 [get_ports {{com_mosi com_csn}}]")
+
 """
         # spi flash
         spiflash_pads = platform.request(spiflash)
