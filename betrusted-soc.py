@@ -22,11 +22,17 @@ from migen.genlib.resetsync import AsyncResetSynchronizer
 from litex.soc.interconnect.csr import *
 from litex.soc.interconnect.csr_eventmanager import *
 
+from litex.soc.integration.doc import AutoDoc, ModuleDoc
+
 from gateware import info
 from gateware import sram_32
 from gateware import memlcd
 from gateware import spi
+from gateware import messible
+from gateware import rtl_i2c
+from gateware import ticktimer
 from litex.soc.cores import gpio
+from migen.genlib.cdc import MultiReg
 
 import lxsocdoc
 
@@ -42,20 +48,21 @@ _io = [
     #("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")), # analog
     #("usbc_cc2", 0, Pins("E16"), IOStandard("LVCMOS33")), # analog
     # ("vbus_div", 0, Pins("E12"), IOStandard("LVCMOS33")), # analog
-    ("wifi_lpclk", 0, Pins("N15"), IOStandard("LVCMOS18")),
+    ("lpclk", 0, Pins("N15"), IOStandard("LVCMOS18")),  # wifi_lpclk
 
     # Power control signals
-    ("audio_on", 0, Pins("G13"), IOStandard("LVCMOS33")),
-    ("fpga_sys_on", 0, Pins("N13"), IOStandard("LVCMOS18")),
-    ("noisebias_on", 0, Pins("A13"), IOStandard("LVCMOS33")),
-    ("allow_up5k_n", 0, Pins("U7"), IOStandard("LVCMOS18")),
-    ("pwr_s0", 0, Pins("U6"), IOStandard("LVCMOS18")),
-    ("pwr_s1", 0, Pins("L13"), IOStandard("LVCMOS18")),
-
-    # Noise generator
-    ("noise_on", 0, Pins("P14", "R13"), IOStandard("LVCMOS18")),
-#    ("noise0", 0, Pins("B13"), IOStandard("LVCMOS33")), # these are analog
-#    ("noise1", 0, Pins("B14"), IOStandard("LVCMOS33")),
+    ("power", 0,
+        Subsignal("audio_on", Pins("G13"), IOStandard("LVCMOS33")),
+        Subsignal("fpga_sys_on", Pins("N13"), IOStandard("LVCMOS18")),
+        Subsignal("noisebias_on", Pins("A13"), IOStandard("LVCMOS33")),
+        Subsignal("allow_up5k_n", Pins("U7"), IOStandard("LVCMOS18")),
+        Subsignal("pwr_s0", Pins("U6"), IOStandard("LVCMOS18")),
+        Subsignal("pwr_s1", Pins("L13"), IOStandard("LVCMOS18")),
+        # Noise generator
+        Subsignal("noise_on", Pins("P14", "R13"), IOStandard("LVCMOS18")),
+    #    ("noise0", 0, Pins("B13"), IOStandard("LVCMOS33")), # these are analog
+    #    ("noise1", 0, Pins("B14"), IOStandard("LVCMOS33")),
+     ),
 
     # Audio interface
     ("au_clk1", 0, Pins("D14"), IOStandard("LVCMOS33")),
@@ -70,10 +77,12 @@ _io = [
 #    ("ana_vp", 0, Pins("J10"), IOStandard("LVCMOS33")),
 
     # I2C1 bus -- to RTC and audio CODEC
-    ("i2c1_scl", 0, Pins("C14"), IOStandard("LVCMOS33")),
-    ("i2c1_sda", 0, Pins("A14"), IOStandard("LVCMOS33")),
+    ("i2c", 0,
+        Subsignal("scl", Pins("C14"), IOStandard("LVCMOS33")),
+        Subsignal("sda", Pins("A14"), IOStandard("LVCMOS33")),
+     ),
     # RTC interrupt
-    ("rtc_int1", 0, Pins("N5"), IOStandard("LVCMOS18")),
+    ("rtc_irq", 0, Pins("N5"), IOStandard("LVCMOS18")),
 
     # COM interface to UP5K
     ("com", 0,
@@ -202,6 +211,12 @@ class CRG(Module, AutoCSR):
         rst = Signal()
         self.clock_domains.cd_sys = ClockDomain()
         self.clock_domains.cd_spi = ClockDomain()
+        self.clock_domains.cd_lpclk = ClockDomain()
+
+        clk32khz = platform.request("lpclk")
+        self.specials += [
+            Instance("BUFG", i_I=clk32khz, o_O=self.cd_lpclk.clk)
+        ]
 
         if slow_clock:
             self.specials += [
@@ -277,6 +292,45 @@ class CRG(Module, AutoCSR):
                           )
             ]
 
+class BtEvents(Module, AutoCSR, AutoDoc):
+    def __init__(self, com, rtc):
+        self.submodules.ev = EventManager()
+        self.ev.com_int = EventSourcePulse()  # rising edge triggered
+        self.ev.rtc_int = EventSourceProcess() # falling edge triggered
+        self.ev.finalize()
+
+        com_int = Signal()
+        rtc_int = Signal()
+        self.specials += MultiReg(com, com_int)
+        self.specials += MultiReg(rtc, rtc_int)
+        self.comb += self.ev.com_int.trigger.eq(com_int)
+        self.comb += self.ev.rtc_int.trigger.eq(rtc_int)
+
+class BtPower(Module, AutoCSR, AutoDoc):
+    def __init__(self, pads):
+        self.intro = ModuleDoc("""BtPower - power control pins
+        """)
+
+        self.power = CSRStorage(8, fields=[
+            CSRField("audio", description="Write `1` to power on the audio subsystem"),
+            CSRField("self", description="Writing `1` forces self power-on (overrides the EC's ability to power me down)", reset=1),
+            CSRField("ec_snoop", description="Writing `1` allows the insecure EC to snoop a couple keyboard pads for wakeup key sequence recognition"),
+            CSRField("state", size=2, description="Current SoC power state. 0x=off or not ready, 10=on and safe to shutdown, 11=on and not safe to shut down, resets to 01 to allow extSRAM access immediately during init", reset=1),
+            CSRField("noisebias", description="Writing `1` enables the primary bias supply for the noise generator"),
+            CSRField("noise", size=2, description="Controls which of two noise channels are active; all combos valid. noisebias must be on first.")
+        ])
+
+        self.comb += [
+            pads.audio_on.eq(self.power.fields.audio),
+            pads.fpga_sys_on.eq(self.power.fields.self),
+            pads.allow_up5k_n.eq(~self.power.fields.ec_snoop),
+            pads.pwr_s0.eq(self.power.fields.state[0] & ~ResetSignal()),  # ensure SRAM isolation during reset (CE & ZZ = 1 by pull-ups)
+            pads.pwr_s1.eq(self.power.fields.state[1]),
+            pads.noisebias_on.eq(self.power.fields.noisebias),
+            pads.nose_on.eq(self.power.felds.noise),
+        ]
+
+
 boot_offset = 0x1000000
 bios_size = 0x8000
 
@@ -300,14 +354,8 @@ class BaseSoC(SoCCore):
                          integrated_sram_size=0x20000,
                          ident="betrusted.io LiteX Base SoC",
                          cpu_type="vexriscv",
+                         cpu_variant="linux+debug",
                          **kwargs)
-
-        self.submodules.audio = gpio.GPIOOut(platform.request("audio_on"))
-        self.add_csr("audio")
-        self.submodules.noisebias = gpio.GPIOOut(platform.request("noisebias_on"))
-        self.add_csr("noisebias")
-        self.submodules.noise = gpio.GPIOOut(platform.request("noise_on"))
-        self.add_csr("noise")
 
         self.submodules.crg = CRG(platform)
         self.add_csr("crg")
@@ -319,6 +367,8 @@ class BaseSoC(SoCCore):
             "create_clock -name sys_clk -period 10.0 [get_nets sys_clk]")
         self.platform.add_platform_command(
             "create_clock -name spi_clk -period 41.6666 [get_nets spi_clk]")
+        self.platform.add_platform_command(
+            "create_clock -name lpclk -period 30517.5781 [get_nets lpclk]") # 32768 Hz in ns
         self.platform.add_platform_command(
             "create_generated_clock -name sys_clk -source [get_pins MMCME2_ADV/CLKIN1] -multiply_by 50 -divide_by 6 -add -master_clock clk12 [get_pins MMCME2_ADV/CLKOUT0]"
         )
@@ -349,29 +399,43 @@ class BaseSoC(SoCCore):
         # relax OE driver constraint (it's OK if it is a bit late, and it's an async path from fabric to output so it will be late)
         self.platform.add_platform_command("set_multicycle_path 2 -setup -through [get_pins sram_ext_sync_oe_n_reg/Q]")
         self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins sram_ext_sync_oe_n_reg/Q]")
-        # S0 power enables SRAM CE/ZZ
-        self.comb += platform.request("pwr_s0", 0).eq(~ResetSignal())  # ensure SRAM isolation during reset (CE/ZZ = 1 by pull-up resistors)
 
         # LCD interface
         self.submodules.memlcd = memlcd.Memlcd(platform.request("lcd"))
         self.add_csr("memlcd")
         self.register_mem("memlcd", self.mem_map["memlcd"], self.memlcd.bus, size=self.memlcd.fb_depth*4)
 
-        # fpga_sys_on keeps the FPGA on
-        self.comb += platform.request("fpga_sys_on", 0).eq(1)
-
         # COM SPI interface
         self.submodules.com = spi.SpiMaster(platform.request("com"))
         self.add_csr("com")
         # 20.83ns = 1/2 of 24MHz clock, we are doing falling-to-rising timing
-        # up5k tsu = -0.5ns, th = 5.55ns, so constraining relative delays to about 14ns should do it?
-        self.platform.add_platform_command("set_input_delay -clock [get_clocks spi_clk] -min -add_delay 14.0 [get_ports {{com_miso}}]")
-        self.platform.add_platform_command("set_output_delay -clock [get_clocks spi_clk] -min -add_delay 14.0 [get_ports {{com_mosi com_csn}}]")
+        # up5k tsu = -0.5ns, th = 5.55ns, tpdmax = 10ns
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks spi_clk] -min -add_delay 0.5 [get_ports {{com_miso}}]") # could be as low as -0.5ns but why not
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks spi_clk] -max -add_delay 10.0 [get_ports {{com_miso}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks spi_clk] -min -add_delay 6.0 [get_ports {{com_mosi com_csn}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks spi_clk] -max -add_delay 16.0 [get_ports {{com_mosi com_csn}}]")  # could be as large as 21ns but why not
         # cross domain clocking is handled with explicit software barrires, or with multiregs
         self.platform.add_false_path_constraints(self.crg.cd_sys.clk, self.crg.cd_spi.clk)
         self.platform.add_false_path_constraints(self.crg.cd_spi.clk, self.crg.cd_sys.clk)
 
-"""
+        # add I2C interface
+        self.submodules.i2c = rtl_i2c.RtlI2C(platform, platform.request("i2c", 0))
+        self.add_csr("i2c")
+        self.add_interrupt("i2c")
+
+        # event generation for I2C and COM
+        self.submodules.btevents = BtEvents(platform.request("com_irq", 0), platform.request("rtc_irq", 0))
+        self.add_csr("btevents")
+        self.add_interrupt("btevents")
+
+        # add messible for debug
+        self.submodules.messible = messible.Messible()
+        self.add_csr("messible")
+
+        # Tick timer
+        self.submodules.ticktimer = ticktimer.TickTimer(clk_freq / 1000)
+        self.add_csr("ticktimer")
+
         # spi flash
         spiflash_pads = platform.request(spiflash)
         spiflash_pads.clk = Signal()
@@ -393,28 +457,12 @@ class BaseSoC(SoCCore):
             "spiflash", self.mem_map["spiflash"] | self.shadow_base, 512*1024*1024)
 
         self.flash_boot_address = 0x207b0000
-"""
-"""
-        # SPI for flash already added above
-        # SPI for network
-        self.submodules.spi = SPIMaster(platform.request("spi"))
-        # SPI for display
-        self.submodules.spi_display = SPIMaster(platform.request("spi_display"))
+        self.add_csr("spiflash")
 
+"""
         # GPIO for keyboard/user I/O
         self.submodules.gi = GPIOIn(platform.request("gpio_in", 0).gi)
         self.submodules.go = GPIOOut(platform.request("gpio_out", 0).go)
-
-        # An external interrupt source
-        self.submodules.ev = EventManager()
-        self.ev.my_int1 = EventSourceProcess()
-        self.ev.finalize()
-
-        self.comb += self.ev.my_int1.trigger.eq(platform.request("int", 0).int)
-
-        self.submodules.i2c = OpsisI2C(platform)
-
-        self.submodules.dma = Wishbone2SPIDMA()
 """
 
 def main():

@@ -10,3 +10,4 @@ pycharm.env
 *.elf
 *.jou
 *.log
+sw/betrusted-pac/
