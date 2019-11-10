@@ -352,11 +352,10 @@ class BtPower(Module, AutoCSR, AutoDoc):
         ]
 
 
-#boot_offset = 0x500000
-boot_offset = 0
+boot_offset = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
 bios_size = 0x8000
 # 128 MB (1024 Mb), but reduce to 64Mbit for bring-up because we don't have extended page addressing implemented yet
-SPI_FLASH_SIZE = 8 * 1024 * 1024
+SPI_FLASH_SIZE = 16 * 1024 * 1024
 
 class BaseSoC(SoCCore):
     # addresses starting with 0xB, 0xE, and 0xF are I/O and not cacheable
@@ -490,7 +489,7 @@ class BaseSoC(SoCCore):
 
         # SPI flash controller
         spi_pads = platform.request("spiflash_1x")
-        self.submodules.spinor = spinor.SpiNor(platform, spi_pads)
+        self.submodules.spinor = spinor.SpiNor(platform, spi_pads, size=SPI_FLASH_SIZE)
         self.register_mem("spiflash", self.mem_map["spiflash"],
             self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
