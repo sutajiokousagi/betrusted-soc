@@ -185,15 +185,15 @@ class Platform(XilinxPlatform):
         self.add_platform_command(
             "set_property BITSTREAM.CONFIG.CONFIGRATE 66 [current_design]")
         self.add_platform_command(
-            "set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 2 [current_design]")
+            "set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 1 [current_design]")
         self.toolchain.bitstream_commands = [
             "set_property CONFIG_VOLTAGE 1.8 [current_design]",
             "set_property CFGBVS GND [current_design]",
             "set_property BITSTREAM.CONFIG.CONFIGRATE 66 [current_design]",
-            "set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 2 [current_design]",
+            "set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 1 [current_design]",
         ]
         self.toolchain.additional_commands = \
-            ["write_cfgmem -verbose -force -format bin -interface spix2 -size 64 "
+            ["write_cfgmem -verbose -force -format bin -interface spix1 -size 64 "
              "-loadbit \"up 0x0 {build_name}.bit\" -file {build_name}.bin"]
         self.programmer = programmer
 
