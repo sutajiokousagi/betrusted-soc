@@ -31,18 +31,24 @@ from gateware import spi
 from gateware import messible
 from gateware import rtl_i2c
 from gateware import ticktimer
-from litex.soc.cores import gpio
 from migen.genlib.cdc import MultiReg
+from gateware import spinor
 
 import lxsocdoc
 
 _io = [
     ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),
 
-    ("serial", 0,
+    ("debug", 0,  # wired via the debug cable to the rpi
      Subsignal("tx", Pins("V6")),
      Subsignal("rx", Pins("V7")),
      IOStandard("LVCMOS18"),
+     ),
+
+    ("serial", 0,
+     Subsignal("tx", Pins("B18")),  # debug0 breakout
+     Subsignal("rx", Pins("D15")),  # debug1
+     IOStandard("LVCMOS33"),
      ),
 
     #("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")), # analog
@@ -94,8 +100,8 @@ _io = [
     ("com_irq", 0, Pins("M16"), IOStandard("LVCMOS18")),
 
     # Top-side internal FPC header
-    ("gpio0", 0, Pins("B18"), IOStandard("LVCMOS33")),
-    ("gpio1", 0, Pins("D15"), IOStandard("LVCMOS33")),
+#    ("gpio0", 0, Pins("B18"), IOStandard("LVCMOS33")),
+#    ("gpio1", 0, Pins("D15"), IOStandard("LVCMOS33")),
     ("gpio2", 0, Pins("A16"), IOStandard("LVCMOS33")),
     ("gpio3", 0, Pins("B16"), IOStandard("LVCMOS33")),
     ("gpio4", 0, Pins("D16"), IOStandard("LVCMOS33")),
@@ -246,6 +252,7 @@ class CRG(Module, AutoCSR):
 
             pll_fb_bufg = Signal()
             mmcm_drdy = Signal()
+            self.warm_reset = Signal()
             self.specials += [
                 Instance("MMCME2_ADV",
                          p_STARTUP_WAIT="FALSE", o_LOCKED=pll_locked,
@@ -271,7 +278,10 @@ class CRG(Module, AutoCSR):
                          o_DRDY=mmcm_drdy,
                          i_DADDR=self._mmcm_adr.storage,
                          i_DI=self._mmcm_dat_w.storage,
-                         o_DO=self._mmcm_dat_r.status
+                         o_DO=self._mmcm_dat_r.status,
+
+                         # Warm reset
+                         i_RST=self.warm_reset,
                          ),
 
                 # feedback delay compensation buffers
@@ -291,6 +301,17 @@ class CRG(Module, AutoCSR):
                           self._mmcm_drdy.status.eq(1)
                           )
             ]
+
+class WarmBoot(Module, AutoCSR):
+    def __init__(self, parent, reset_vector=0):
+        self.ctrl = CSRStorage(size=8)
+        self.addr = CSRStorage(size=32, reset=reset_vector)
+        self.do_reset = Signal()
+        self.comb += [
+            # "Reset Key" is 0xac (0b101011xx)
+            self.do_reset.eq(self.ctrl.storage[2] & self.ctrl.storage[3] & ~self.ctrl.storage[4]
+                      & self.ctrl.storage[5] & ~self.ctrl.storage[6] & self.ctrl.storage[7])
+        ]
 
 class BtEvents(Module, AutoCSR, AutoDoc):
     def __init__(self, com, rtc):
@@ -327,20 +348,26 @@ class BtPower(Module, AutoCSR, AutoDoc):
             pads.pwr_s0.eq(self.power.fields.state[0] & ~ResetSignal()),  # ensure SRAM isolation during reset (CE & ZZ = 1 by pull-ups)
             pads.pwr_s1.eq(self.power.fields.state[1]),
             pads.noisebias_on.eq(self.power.fields.noisebias),
-            pads.nose_on.eq(self.power.felds.noise),
+            pads.noise_on.eq(self.power.fields.noise),
         ]
 
 
-boot_offset = 0x1000000
+#boot_offset = 0x500000
+boot_offset = 0
 bios_size = 0x8000
+# 128 MB (1024 Mb), but reduce to 64Mbit for bring-up because we don't have extended page addressing implemented yet
+SPI_FLASH_SIZE = 8 * 1024 * 1024
 
 class BaseSoC(SoCCore):
-    mem_map = {
-        "spiflash": 0x20000000,  # (default shadow @0xa0000000)
+    # addresses starting with 0xB, 0xE, and 0xF are I/O and not cacheable
+    SoCCore.mem_map = {
+        "rom": 0x00000000, # required to keep litex happy
+        "sram": 0x10000000,
+        "spiflash": 0x20000000,
         "sram_ext": 0x40000000,
         "memlcd": 0x50000000,
+        "csr": 0xF0000000,
     }
-    mem_map.update(SoCCore.mem_map)
 
     def __init__(self, platform, spiflash="spiflash_1x", **kwargs):
         if slow_clock:
@@ -348,19 +375,35 @@ class BaseSoC(SoCCore):
         else:
             clk_freq = int(100e6)
 
-#        kwargs['cpu_reset_address']=self.mem_map["spiflash"]+boot_offset
+        # CPU cluster
         SoCCore.__init__(self, platform, clk_freq,
-                         integrated_rom_size=bios_size,
+                         integrated_rom_size=0,
                          integrated_sram_size=0x20000,
                          ident="betrusted.io LiteX Base SoC",
                          cpu_type="vexriscv",
-                         cpu_variant="linux+debug",
                          **kwargs)
+        self.cpu.use_external_variant("gateware/VexRiscv_HaD_Debug.v")
+        self.cpu.add_debug()
+        self.add_memory_region("rom", 0, 0) # Required to keep litex happy
+        kwargs['cpu_reset_address']=self.mem_map["spiflash"]+boot_offset
+        self.submodules.reboot = WarmBoot(self, reset_vector=kwargs['cpu_reset_address'])
+        self.add_csr("reboot")
+        warm_reset = Signal()
+        self.comb += warm_reset.eq(self.reboot.do_reset)
+        self.cpu.cpu_params.update(
+            i_externalResetVector=self.reboot.addr.storage,
+        )
+        # Debug cluster
+        from litex.soc.cores.uart import UARTWishboneBridge
+        self.submodules.uart_bridge = UARTWishboneBridge(platform.request("debug"), clk_freq, baudrate=115200)
+        self.add_wb_master(self.uart_bridge.wishbone)
+        self.register_mem("vexriscv_debug", 0xe00f0000, self.cpu.debug_bus, 0x100)
 
+        # clockgen cluster
         self.submodules.crg = CRG(platform)
         self.add_csr("crg")
         self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/clk_freq)
-
+        self.comb += self.crg.warm_reset.eq(warm_reset)
         self.platform.add_platform_command(
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
         self.platform.add_platform_command(
@@ -375,7 +418,7 @@ class BaseSoC(SoCCore):
 
         self.submodules.info = info.Info(platform, self.__class__.__name__)
         self.add_csr("info")
-        self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
+        self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{info_dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
 
         # external SRAM
         # Note that page_rd_timing=2 works, but is a slight overclock on RAM. Cache fill time goes from 436ns to 368ns for 8 words.
@@ -436,7 +479,24 @@ class BaseSoC(SoCCore):
         self.submodules.ticktimer = ticktimer.TickTimer(clk_freq / 1000)
         self.add_csr("ticktimer")
 
-        # spi flash
+        # Power control pins
+        self.submodules.power = BtPower(platform.request("power"))
+        self.add_csr("power")
+
+        # set the CPU reset address (move this to Rust area after validating basic CPU changes using the baseline C test program
+        #self.cpu.cpu_params.update(
+        #    i_externalResetVector=0x0,
+        #)
+
+        # SPI flash controller
+        spi_pads = platform.request("spiflash_1x")
+        self.submodules.spinor = spinor.SpiNor(platform, spi_pads)
+        self.register_mem("spiflash", self.mem_map["spiflash"],
+            self.spinor.bus, size=SPI_FLASH_SIZE)
+        self.add_csr("spinor")
+
+        """
+        # this implementation doesn't work for running code from flash for some reason.
         spiflash_pads = platform.request(spiflash)
         spiflash_pads.clk = Signal()
         self.specials += Instance("STARTUPE2",
@@ -454,12 +514,12 @@ class BaseSoC(SoCCore):
         self.add_constant("SPIFLASH_SECTOR_SIZE", 0x10000)
         self.add_wb_slave(mem_decoder(self.mem_map["spiflash"]), self.spiflash.bus)
         self.add_memory_region(
-            "spiflash", self.mem_map["spiflash"] | self.shadow_base, 512*1024*1024)
+            "spiflash", self.mem_map["spiflash"], SPI_FLASH_SIZE)
 
-        self.flash_boot_address = 0x207b0000
+        #        self.flash_boot_address = 0x20500000
+        self.flash_boot_address = 0x20000000
         self.add_csr("spiflash")
 
-"""
         # GPIO for keyboard/user I/O
         self.submodules.gi = GPIOIn(platform.request("gpio_in", 0).gi)
         self.submodules.go = GPIOOut(platform.request("gpio_out", 0).go)
@@ -477,7 +537,7 @@ def main():
 
     args = parser.parse_args()
     compile_gateware = True
-    compile_software = True
+    compile_software = False
 
     if args.document_only:
         compile_gateware = False
