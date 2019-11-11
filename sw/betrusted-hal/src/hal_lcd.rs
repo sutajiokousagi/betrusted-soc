@@ -1,3 +1,5 @@
+#[allow(dead_code)]
+
 pub mod hal_lcd {
     const FB_WIDTH_WORDS: usize = 11;
     const FB_LINES: usize = 536;
