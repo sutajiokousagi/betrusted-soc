@@ -375,6 +375,11 @@ class BaseSoC(SoCCore):
             clk_freq = int(100e6)
 
         # CPU cluster
+        ## For dev work, we're booting from SPI directly. However, for enhanced security
+        ## we will eventually want to move to a bitstream-ROM based bootloder that does
+        ## a signature verification of the external SPI code before running it. The theory is that
+        ## a user will burn a random AES key into their FPGA and encrypt their bitstream to their
+        ## unique AES key, creating a root of trust that offers a defense against trivial patch attacks.
         SoCCore.__init__(self, platform, clk_freq,
                          integrated_rom_size=0,
                          integrated_sram_size=0x20000,
@@ -482,11 +487,6 @@ class BaseSoC(SoCCore):
         self.submodules.power = BtPower(platform.request("power"))
         self.add_csr("power")
 
-        # set the CPU reset address (move this to Rust area after validating basic CPU changes using the baseline C test program
-        #self.cpu.cpu_params.update(
-        #    i_externalResetVector=0x0,
-        #)
-
         # SPI flash controller
         spi_pads = platform.request("spiflash_1x")
         self.submodules.spinor = spinor.SpiNor(platform, spi_pads, size=SPI_FLASH_SIZE)
@@ -494,35 +494,7 @@ class BaseSoC(SoCCore):
             self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
 
-        """
-        # this implementation doesn't work for running code from flash for some reason.
-        spiflash_pads = platform.request(spiflash)
-        spiflash_pads.clk = Signal()
-        self.specials += Instance("STARTUPE2",
-                                  i_CLK=0, i_GSR=0, i_GTS=0, i_KEYCLEARB=0, i_PACK=0,
-                                  i_USRCCLKO=spiflash_pads.clk, i_USRCCLKTS=0, i_USRDONEO=1, i_USRDONETS=1)
-        spiflash_dummy = {
-            "spiflash_1x": 8,  # this is specific to the device populated on the board -- if it changes, must be updated
-            "spiflash_4x": 12, # this is almost certainly wrong
-        }
-        self.submodules.spiflash = spi_flash.SpiFlash(
-                spiflash_pads,
-                dummy=spiflash_dummy[spiflash],
-                div=2)
-        self.add_constant("SPIFLASH_PAGE_SIZE", 256)
-        self.add_constant("SPIFLASH_SECTOR_SIZE", 0x10000)
-        self.add_wb_slave(mem_decoder(self.mem_map["spiflash"]), self.spiflash.bus)
-        self.add_memory_region(
-            "spiflash", self.mem_map["spiflash"], SPI_FLASH_SIZE)
-
-        #        self.flash_boot_address = 0x20500000
-        self.flash_boot_address = 0x20000000
-        self.add_csr("spiflash")
-
-        # GPIO for keyboard/user I/O
-        self.submodules.gi = GPIOIn(platform.request("gpio_in", 0).gi)
-        self.submodules.go = GPIOOut(platform.request("gpio_out", 0).go)
-"""
+        ## TODO: keyboard, XADC, audio, wide-width/fast SPINOR, sdcard
 
 def main():
     if os.environ['PYTHONHASHSEED'] != "1":

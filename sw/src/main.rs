@@ -3,6 +3,7 @@
 
 use core::panic::PanicInfo;
 use riscv_rt::entry;
+//use riscv_semihosting::hprintln;
 
 extern crate betrusted_hal;
 
@@ -24,11 +25,13 @@ fn main() -> ! {
 
     let p = betrusted_pac::Peripherals::take().unwrap();
 
-//    i2c_init(&p, CONFIG_CLOCK_FREQUENCY / 1_000_000);
+    i2c_init(&p, CONFIG_CLOCK_FREQUENCY / 1_000_000);
     time_init(&p);
 
     // flash an LED!
     loop {
+        // hprintln!("Helol world!").unwrap();
+
         delay_ms(&p, 500);
         unsafe{ DBGSTR[0] = 4; }
 
