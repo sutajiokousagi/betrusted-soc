@@ -176,13 +176,13 @@ class Memlcd(Module, AutoCSR):
 
         self.command = CSRStorage(2, fields=[
             CSRField("UpdateDirty", description="Write a ``1`` to flush dirty lines to the LCD", pulse=True),
-            CSRField("UpdateAll", description="Update full screen regardless of tag state")
+            CSRField("UpdateAll", description="Update full screen regardless of tag state", pulse=True),
         ])
 
         self.busy = CSRStatus(1, name="Busy", description="""A ``1`` indicates that the block is currently updating the LCD""")
 
         self.prescaler = CSRStorage(8, reset=99, name="prescaler", description="""
-        Prescaler value. LCD clock is module (clock / (prescaler+1)). Reset value: 100, so
+        Prescaler value. LCD clock is module (clock / (prescaler+1)). Reset value: 99, so
         for a default sysclk of 100MHz this yields an LCD SCLK of 1MHz""")
 
         self.submodules.ev = EventManager()
