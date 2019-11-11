@@ -517,10 +517,10 @@ def main():
     platform = Platform()
     soc = BaseSoC(platform)
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv", compile_software=compile_software, compile_gateware=compile_gateware)
-    lxsocdoc.generate_docs(soc, "build/documentation", note_pulses=True)
-    lxsocdoc.generate_svd(soc, "build/software")
     vns = builder.build()
     soc.do_exit(vns)
+    lxsocdoc.generate_docs(soc, "build/documentation", note_pulses=True)
+    lxsocdoc.generate_svd(soc, "build/software")
 
 if __name__ == "__main__":
     main()
