@@ -5,9 +5,7 @@ pub mod hal_lcd {
     const FB_LINES: usize = 536;
     const FB_SIZE: usize = FB_WIDTH_WORDS * FB_LINES; // 44 bytes by 536 lines
 
-    extern "C" {
-        static mut _lcdfb: [u32; FB_SIZE];
-    }
+    const LCD_FB: *mut [u32; FB_SIZE] = 0x5000_0000 as *mut [u32; FB_SIZE];
 
     /// LCD hardware abstraction layer
     /// 
@@ -30,9 +28,9 @@ pub mod hal_lcd {
     pub fn lcd_clear(p: &betrusted_pac::Peripherals) {
         for words in 0..FB_SIZE {
             if words % FB_WIDTH_WORDS != 10 {
-                unsafe { _lcdfb[words] = 0xFFFF_FFFF; } // 1 is white
+                unsafe{ (*LCD_FB)[words] = 0xFFFF_FFFF; }
             } else {
-                unsafe { _lcdfb[words] = 0x0000_FFFF; } // don't set the dirty bit
+                unsafe{ (*LCD_FB)[words] = 0x0000_FFFF; } // don't set the dirty bit
             }
         }
         lcd_update_all(p); // because we force an all update here
@@ -42,9 +40,9 @@ pub mod hal_lcd {
     pub fn lcd_pattern(p: &betrusted_pac::Peripherals, pattern: u32) {
         for words in 0..FB_SIZE / 4 {
             if words % FB_WIDTH_WORDS != 10 {
-                unsafe { _lcdfb[words] = pattern; }
+                unsafe{ (*LCD_FB)[words] = pattern; }
             } else {
-                unsafe { _lcdfb[words] = (pattern & 0xFFFF) | 0x1_0000; }
+                unsafe{ (*LCD_FB)[words] = (pattern & 0xFFFF) | 0x1_0000; }
             }
         }
         lcd_update_dirty(p);
