@@ -8,11 +8,10 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-riscv = { git = "https://github.com/betrusted-io/riscv.git", tag = "v0.5.5" }
-riscv-rt = { git = "https://github.com/betrusted-io/riscv-rt.git", tag = "v0.6.2" }
+riscv = "0.5.4"
+riscv-rt = "0.6.1"
 betrusted-pac = { path = "betrusted-pac" }
 betrusted-hal = { path = "betrusted-hal" }
-linked_list_allocator = { path = "linked-list-allocator" }
 alloc-riscv = { path = "alloc-riscv" }
 
 # this lets you use `cargo fix`!

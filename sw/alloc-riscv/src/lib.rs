@@ -53,14 +53,15 @@
 extern crate alloc;
 extern crate riscv;
 extern crate linked_list_allocator;
-// extern crate spin;
+extern crate spin;
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::NonNull;
 
 // use riscv::interrupt::Mutex;
-mod mutex;
-use mutex::Mutex;
+// mod mutex;
+// use mutex::Mutex;
+use spin::Mutex;
 
 use linked_list_allocator::Heap;
 

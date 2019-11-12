@@ -68,10 +68,6 @@ fn main() -> ! {
     v.push(!2);
     v.push(!4);
     v.push(!8);
-    v.push(!16);
-    v.push(!8);
-    v.push(!4);
-    v.push(!2);
 
     loop {
 
