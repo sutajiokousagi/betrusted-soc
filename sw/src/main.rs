@@ -1,9 +1,29 @@
 #![no_main]
+
+#![feature(alloc)]
+#![feature(global_allocator)]
+#![feature(lang_items)]
+#![feature(alloc_error_handler)]
+
 #![no_std]
 
 use core::panic::PanicInfo;
 use riscv_rt::entry;
-//use riscv_semihosting::hprintln;
+
+extern "C" {
+    static _sheap: u8;
+    static _heap_size: u8;
+}
+
+// Plug in the allocator crate
+extern crate alloc;
+extern crate alloc_riscv;
+
+use alloc::vec;
+use alloc_riscv::RiscvHeap;
+
+#[global_allocator]
+static ALLOCATOR: RiscvHeap = RiscvHeap::empty();
 
 extern crate betrusted_hal;
 
@@ -16,6 +36,11 @@ static mut DBGSTR: [u32; 4] = [0, 0, 0, 0];
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
     loop {}
+}
+
+#[alloc_error_handler]
+fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
+    panic!()
 }
 
 #[entry]
@@ -32,15 +57,34 @@ fn main() -> ! {
     lcd_init(&p, CONFIG_CLOCK_FREQUENCY);
     lcd_clear(&p);
 
-    let mut i : u32 = 0;
-    loop {
-        // hprintln!("Hello world!").unwrap();
+    unsafe {
+        let heap_start = &_sheap as *const u8 as usize;
+        let heap_size = &_heap_size as *const u8 as usize;
+        ALLOCATOR.init(heap_start, heap_size)
+    }
 
+    let mut v: alloc::vec::Vec <u32> = alloc::vec::Vec::new();
+    v.push(!1);
+    v.push(!2);
+    v.push(!4);
+    v.push(!8);
+    v.push(!16);
+    v.push(!8);
+    v.push(!4);
+    v.push(!2);
+
+    loop {
+
+        for pattern in v.iter() {
+            lcd_pattern(&p, *pattern);
+        }
+        /*
         lcd_pattern(&p, !(1 << i));
         i += 1;
         if i >= 32 {
             i = 0;
         }
+        */
         /*
         delay_ms(&p, 500);
         unsafe{ DBGSTR[0] = 4; }

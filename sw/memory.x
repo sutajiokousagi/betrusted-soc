@@ -18,3 +18,5 @@ SECTIONS {
     _lcdfb = .;
   } > MEMLCD
 }
+
+_heap_size = LENGTH(RAM) - 1M;
