@@ -8,6 +8,8 @@
 use core::panic::PanicInfo;
 use riscv_rt::entry;
 
+// pull in external symbols to define heap start and stop
+// defined in memory.x
 extern "C" {
     static _sheap: u8;
     static _heap_size: u8;
@@ -28,7 +30,7 @@ const CONFIG_CLOCK_FREQUENCY: u32 = 100_000_000;
 
 // allocate a global, unsafe static string for debug output
 #[used] // This is necessary to keep DBGSTR from being optimized out
-static mut DBGSTR: [u32; 4] = [0, 0, 0, 0];
+static mut DBGSTR: [u32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
 
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
@@ -59,7 +61,9 @@ fn main() -> ! {
     unsafe {
         let heap_start = &_sheap as *const u8 as usize;
         let heap_size = &_heap_size as *const u8 as usize;
-        ALLOCATOR.init(heap_start, heap_size)
+        ALLOCATOR.init(heap_start, heap_size);
+        DBGSTR[4] = heap_start as u32;  // some debug visibility on heap initial parameters
+        DBGSTR[6] = heap_size as u32;
     }
 
     let mut v: Vec <u32> = Vec::new();
