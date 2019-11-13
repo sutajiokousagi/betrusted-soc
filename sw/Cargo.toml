@@ -13,6 +13,7 @@ riscv-rt = "0.6.1"
 betrusted-pac = { path = "betrusted-pac" }
 betrusted-hal = { path = "betrusted-hal" }
 alloc-riscv = { path = "alloc-riscv" }
+embedded-graphics = { path = "embedded-graphics/embedded-graphics" }
 
 # this lets you use `cargo fix`!
 [[bin]]

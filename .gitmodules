@@ -16,3 +16,7 @@
 [submodule "deps/lxsocdoc"]
 	path = deps/lxsocdoc
 	url = https://github.com/xobs/lxsocdoc.git
+[submodule "sw/embedded-graphics"]
+	path = sw/embedded-graphics
+	url = git@github.com:betrusted-io/embedded-graphics.git
+	branch = master
