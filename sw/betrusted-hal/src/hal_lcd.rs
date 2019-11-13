@@ -6,8 +6,11 @@ pub mod hal_lcd {
     use embedded_graphics::geometry::Size;
     use embedded_graphics::pixelcolor::{BinaryColor};
     use embedded_graphics::DrawTarget;
+    use spin::Mutex;
+    use core::ops::Deref;
 
-    const LCD_FB: *mut [u32; FB_SIZE] = 0x5000_0000 as *mut [u32; FB_SIZE];
+    /// FIXME: figure out a way to get LCD_FB mapped to the _lcdfb symbol without crashing RLS
+    const LCD_FB: *mut [u32; FB_SIZE] = 0xB000_0000 as *mut [u32; FB_SIZE];
     const FB_WIDTH_WORDS: usize = 11;
     const FB_WIDTH_PIXELS: usize = 336;
     const FB_LINES: usize = 536;
@@ -27,29 +30,59 @@ pub mod hal_lcd {
             lcd_init(&self.interface, clk_mhz);
         }
 
-        pub fn flush(self) -> Result<(), ()> {
-            lcd_update_all(&self.interface);
-            while !lcd_busy(&self.interface) {}
+        pub fn flush(&self) -> Result<(), ()> {
+            lcd_update_dirty(&self.interface);
             while lcd_busy(&self.interface) {} // should this be blocking??
 
             // clear all the dirty bits, under the theory that it's time-wise cheaper on average
             // to visit every line and clear the dirty bits than it is to do an update_all()
-            //for lines in 0..FB_LINES {
-            //    unsafe{
-            //        (*LCD_FB)[lines * FB_WIDTH_WORDS + (FB_WIDTH_WORDS - 1)] &= 0x0000_FFFF;
-            //    }
-            //}
+            for lines in 0..FB_LINES {
+                unsafe{
+                    (*LCD_FB)[lines * FB_WIDTH_WORDS + (FB_WIDTH_WORDS - 1)] &= 0x0000_FFFF;
+                }
+            }
             Ok(())
         }
         
         pub fn clear(&self) {
+            let mut line_dirty: bool = false;
             for words in 0..FB_SIZE {
                 if words % FB_WIDTH_WORDS != 10 {
-                    unsafe{ (*LCD_FB)[words] = 0xFFFF_FFFF; }
+                    unsafe{ 
+                        if (*LCD_FB)[words] != 0xFFFF_FFFF {
+                            (*LCD_FB)[words] = 0xFFFF_FFFF;
+                            line_dirty = true;
+                        }
+                    }
                 } else {
-                    unsafe{ (*LCD_FB)[words] = 0x0001_FFFF; } // set the dirty bit in this case
+                    unsafe{ 
+                        if (*LCD_FB)[words] & 0xFFFF != 0xFFFF || line_dirty {
+                            (*LCD_FB)[words] = 0x0001_FFFF;
+                        }
+                        line_dirty = false;
+                    }
                 }
             }
+        }
+    }
+
+    pub struct LockedBetrustedDisplay(Mutex<BetrustedDisplay>);
+
+    impl LockedBetrustedDisplay {
+        pub fn empty() -> LockedBetrustedDisplay {
+            LockedBetrustedDisplay(Mutex::new(BetrustedDisplay::new()))
+        }
+
+        pub fn new() -> LockedBetrustedDisplay {
+            LockedBetrustedDisplay(Mutex::new(BetrustedDisplay::new()))
+        }
+    }
+
+    impl Deref for LockedBetrustedDisplay {
+        type Target = Mutex<BetrustedDisplay>;
+
+        fn deref(&self) -> &Mutex<BetrustedDisplay> {
+            &self.0
         }
     }
 
@@ -71,11 +104,11 @@ pub mod hal_lcd {
                           !(1 << (coord.x % 32)); },
             }
             // set the dirty bit on the line
-            //unsafe{
-            //    (*LCD_FB)[(coord.y * FB_WIDTH_WORDS as i32 + (FB_WIDTH_WORDS as i32 - 1)) as usize] |= 0xFFFF_0000;
-            //}
+            unsafe{
+                (*LCD_FB)[(coord.y * FB_WIDTH_WORDS as i32 + (FB_WIDTH_WORDS as i32 - 1)) as usize] |= 0x0001_0000;
+            }
         }
-    }   
+    }
     
     /// LCD hardware abstraction layer
     /// 

@@ -68,9 +68,9 @@ fn main() -> ! {
         DBGSTR[6] = heap_size as u32;
     }
 
-    let display: BetrustedDisplay = BetrustedDisplay::new();
-    display.init(CONFIG_CLOCK_FREQUENCY);
-    display.clear();
+    let display: LockedBetrustedDisplay = LockedBetrustedDisplay::new();
+    display.lock().init(CONFIG_CLOCK_FREQUENCY);
+    display.lock().clear();
 
     let radius: i32 = 14;
     let mut x: i32 = 12;
@@ -79,35 +79,39 @@ fn main() -> ! {
     let rand: Vec<i32> = vec![6, 2, 3, 5, 8, 3, 2, 4, 3, 8, 2];
     let mut index: usize = 0;
     loop {
-        let mut display: BetrustedDisplay = BetrustedDisplay::new();
-        display.clear();
+        display.lock().clear();
         Font12x16::render_str("Hello World!")
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(25,10))
-        .draw(&mut display);
+        .draw(&mut display.lock() as &mut BetrustedDisplay);
 
         let circle = egcircle!((x, y), radius as u32, 
                                stroke_color = Some(BinaryColor::Off), fill_color = Some(BinaryColor::On));
-        circle.draw(&mut display);
-
+        circle.draw(&mut display.lock() as &mut BetrustedDisplay);
+        
         x = x + vector.x; y = y + vector.y;
-        if (x >= (display.size().width as i32 - radius)) || (x <= radius) ||   
-           (y >= (display.size().height as i32 - radius)) || (y <= radius) {
-            if x >= (display.size().width as i32 - radius) {
+        let size: Size = display.lock().size();
+        if (x >= (size.width as i32 - radius)) || (x <= radius) ||   
+           (y >= (size.height as i32 - radius)) || (y <= radius) {
+            if x >= (size.width as i32 - radius) {
                 vector.x = -rand[index];
+                x = size.width as i32 - radius;
             }
             if x <= radius {
                 vector.x = rand[index];
+                x = radius;
             }
-            if y >= (display.size().height as i32 - radius) {
+            if y >= (size.height as i32 - radius) {
                 vector.y = -rand[index];
+                y = size.height as i32 - radius;
             }
             if y <= radius {
                 vector.y = rand[index];
+                y = radius;
             }
             index += 1;
             index = index % rand.len();
         }
-        display.flush().unwrap();
+        display.lock().flush().unwrap();
     }
 }

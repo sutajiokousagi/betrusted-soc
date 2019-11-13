@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 betrusted-pac = { path = "../betrusted-pac" }
 embedded-graphics = { path = "../embedded-graphics/embedded-graphics" }
+spin = "0.5.2"

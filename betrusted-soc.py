@@ -364,7 +364,7 @@ class BaseSoC(SoCCore):
         "sram": 0x10000000,
         "spiflash": 0x20000000,
         "sram_ext": 0x40000000,
-        "memlcd": 0x50000000,
+        "memlcd": 0xB0000000,
         "csr": 0xF0000000,
     }
 
