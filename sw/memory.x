@@ -12,11 +12,5 @@ REGION_ALIAS("REGION_BSS", RAM);
 REGION_ALIAS("REGION_HEAP", RAM);
 REGION_ALIAS("REGION_STACK", RAM);
 
-SECTIONS {
-  .lcdfb (NOLOAD) : ALIGN(4) {
-    . = ALIGN(4);
-    _lcdfb = .;
-  } > MEMLCD
-}
-
+_lcdfb = ORIGIN(MEMLCD);
 _heap_size = LENGTH(RAM) - 1M;
