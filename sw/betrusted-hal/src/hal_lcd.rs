@@ -1,10 +1,71 @@
 #[allow(dead_code)]
 
 pub mod hal_lcd {
+    extern crate embedded_graphics;
+    use embedded_graphics::drawable::Pixel;
+    use embedded_graphics::geometry::Size;
+    use embedded_graphics::pixelcolor::{BinaryColor};
+    use embedded_graphics::DrawTarget;
+    
     const FB_WIDTH_WORDS: usize = 11;
+    const FB_WIDTH_PIXELS: usize = 336;
     const FB_LINES: usize = 536;
     const FB_SIZE: usize = FB_WIDTH_WORDS * FB_LINES; // 44 bytes by 536 lines
+    
+    // betrusted_pac::Peripherals::steal().unwrap();
+    
+    pub struct BetrustedDisplay {
+            interface: betrusted_pac::Peripherals,
+    }
+    
+    impl BetrustedDisplay {
+        pub fn new() -> Self {
+            unsafe{ BetrustedDisplay{ interface: betrusted_pac::Peripherals::steal(), } }
+        }
 
+        pub fn init(&self, clk_mhz: u32) {
+            lcd_init(&self.interface, clk_mhz);
+        }
+
+        pub fn flush(self) -> Result<(), ()> {
+            lcd_update_all(&self.interface);
+            while lcd_busy(&self.interface) {} // should this be blocking??
+
+            Ok(())
+        }
+        
+        pub fn clear(&self) {
+            for words in 0..FB_SIZE {
+                if words % FB_WIDTH_WORDS != 10 {
+                    unsafe{ (*LCD_FB)[words] = 0xFFFF_FFFF; }
+                } else {
+                    unsafe{ (*LCD_FB)[words] = 0x0000_FFFF; } // don't set the dirty bit
+                }
+            }
+        }
+    }
+
+    impl DrawTarget<BinaryColor> for BetrustedDisplay {
+        fn size(&self) -> Size {
+            Size::new(FB_WIDTH_PIXELS as u32, FB_LINES as u32)
+        }
+
+        fn draw_pixel(&mut self, pixel:Pixel<BinaryColor>) {
+            let Pixel(coord, color) = pixel;
+            match color {
+                BinaryColor::Off => 
+                   unsafe{ 
+                       (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] |= 
+                          1 << (coord.x % 32); },
+                BinaryColor::On =>
+                   unsafe{ 
+                       (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] &= 
+                          !(1 << (coord.x % 32)); },
+            }
+        }
+    }   
+    
+    
     const LCD_FB: *mut [u32; FB_SIZE] = 0x5000_0000 as *mut [u32; FB_SIZE];
 
     /// LCD hardware abstraction layer
