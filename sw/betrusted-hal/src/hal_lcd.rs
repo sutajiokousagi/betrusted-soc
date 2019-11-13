@@ -38,7 +38,7 @@ pub mod hal_lcd {
     }
 
     pub fn lcd_pattern(p: &betrusted_pac::Peripherals, pattern: u32) {
-        for words in 0..FB_SIZE / 4 {
+        for words in 0..FB_SIZE / 2 {
             if words % FB_WIDTH_WORDS != 10 {
                 unsafe{ (*LCD_FB)[words] = pattern; }
             } else {

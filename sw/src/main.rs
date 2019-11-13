@@ -1,7 +1,5 @@
 #![no_main]
 
-#![feature(alloc)]
-#![feature(global_allocator)]
 #![feature(lang_items)]
 #![feature(alloc_error_handler)]
 
@@ -19,7 +17,6 @@ extern "C" {
 extern crate alloc;
 extern crate alloc_riscv;
 
-use alloc::vec;
 use alloc_riscv::RiscvHeap;
 
 #[global_allocator]
@@ -40,6 +37,7 @@ fn panic(_panic: &PanicInfo<'_>) -> ! {
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
+    unsafe{ DBGSTR[3] = layout.size() as u32; }
     panic!()
 }
 
@@ -48,6 +46,7 @@ fn main() -> ! {
     use betrusted_hal::hal_i2c::hal_i2c::*;
     use betrusted_hal::hal_time::hal_time::*;
     use betrusted_hal::hal_lcd::hal_lcd::*;
+    use alloc::vec::Vec;
 
     let p = betrusted_pac::Peripherals::take().unwrap();
 
@@ -63,11 +62,15 @@ fn main() -> ! {
         ALLOCATOR.init(heap_start, heap_size)
     }
 
-    let mut v: alloc::vec::Vec <u32> = alloc::vec::Vec::new();
+    let mut v: Vec <u32> = Vec::new();
     v.push(!1);
     v.push(!2);
     v.push(!4);
     v.push(!8);
+    v.push(8);
+    v.push(4);
+    v.push(2);
+    v.push(1);
 
     loop {
 
