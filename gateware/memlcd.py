@@ -246,7 +246,7 @@ class Memlcd(Module, AutoCSR):
         fsm_up.act("WAITDONE",
                    If(linedone,
                       NextValue(fetch_dirty, 1),
-                      NextState("CHECKDIRTY"),
+                      NextState("FETCHDIRTY"),
                       NextValue(update_line, update_line - 1),
                       NextValue(update_addr, update_addr - bytes_per_line),
                     )
