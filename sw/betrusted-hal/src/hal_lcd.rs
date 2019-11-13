@@ -6,14 +6,14 @@ pub mod hal_lcd {
     use embedded_graphics::geometry::Size;
     use embedded_graphics::pixelcolor::{BinaryColor};
     use embedded_graphics::DrawTarget;
-    
+
+    const LCD_FB: *mut [u32; FB_SIZE] = 0x5000_0000 as *mut [u32; FB_SIZE];
     const FB_WIDTH_WORDS: usize = 11;
     const FB_WIDTH_PIXELS: usize = 336;
     const FB_LINES: usize = 536;
     const FB_SIZE: usize = FB_WIDTH_WORDS * FB_LINES; // 44 bytes by 536 lines
-    
-    // betrusted_pac::Peripherals::steal().unwrap();
-    
+        
+    /// BetrustedDisplay abstraction for embedded-graphics library
     pub struct BetrustedDisplay {
             interface: betrusted_pac::Peripherals,
     }
@@ -29,8 +29,16 @@ pub mod hal_lcd {
 
         pub fn flush(self) -> Result<(), ()> {
             lcd_update_all(&self.interface);
+            while !lcd_busy(&self.interface) {}
             while lcd_busy(&self.interface) {} // should this be blocking??
 
+            // clear all the dirty bits, under the theory that it's time-wise cheaper on average
+            // to visit every line and clear the dirty bits than it is to do an update_all()
+            //for lines in 0..FB_LINES {
+            //    unsafe{
+            //        (*LCD_FB)[lines * FB_WIDTH_WORDS + (FB_WIDTH_WORDS - 1)] &= 0x0000_FFFF;
+            //    }
+            //}
             Ok(())
         }
         
@@ -39,7 +47,7 @@ pub mod hal_lcd {
                 if words % FB_WIDTH_WORDS != 10 {
                     unsafe{ (*LCD_FB)[words] = 0xFFFF_FFFF; }
                 } else {
-                    unsafe{ (*LCD_FB)[words] = 0x0000_FFFF; } // don't set the dirty bit
+                    unsafe{ (*LCD_FB)[words] = 0x0001_FFFF; } // set the dirty bit in this case
                 }
             }
         }
@@ -62,12 +70,13 @@ pub mod hal_lcd {
                        (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] &= 
                           !(1 << (coord.x % 32)); },
             }
+            // set the dirty bit on the line
+            //unsafe{
+            //    (*LCD_FB)[(coord.y * FB_WIDTH_WORDS as i32 + (FB_WIDTH_WORDS as i32 - 1)) as usize] |= 0xFFFF_0000;
+            //}
         }
     }   
     
-    
-    const LCD_FB: *mut [u32; FB_SIZE] = 0x5000_0000 as *mut [u32; FB_SIZE];
-
     /// LCD hardware abstraction layer
     /// 
     /// The API for the betrusted LCD needs to be security-aware. Untrusted content
@@ -98,7 +107,7 @@ pub mod hal_lcd {
         while lcd_busy(p) {}
     }
 
-    pub fn lcd_pattern(p: &betrusted_pac::Peripherals, pattern: u32) {
+    pub fn lcd_test_pattern(p: &betrusted_pac::Peripherals, pattern: u32) {
         for words in 0..FB_SIZE / 2 {
             if words % FB_WIDTH_WORDS != 10 {
                 unsafe{ (*LCD_FB)[words] = pattern; }

@@ -76,7 +76,7 @@ fn main() -> ! {
     let mut x: i32 = 12;
     let mut y: i32 = 30;
     let mut vector: Point = Point::new(2,3);
-    let rand: Vec<i32> = vec![2, 1, 3, 5, 2, 3, 2, 4, 1, 2, 2];
+    let rand: Vec<i32> = vec![6, 2, 3, 5, 8, 3, 2, 4, 3, 8, 2];
     let mut index: usize = 0;
     loop {
         let mut display: BetrustedDisplay = BetrustedDisplay::new();
@@ -110,35 +110,4 @@ fn main() -> ! {
         }
         display.flush().unwrap();
     }
-    /*
-    let mut v: Vec <u32> = Vec::new();
-    v.push(!1);
-    v.push(!2);
-    v.push(!4);
-    v.push(!8);
-    v.push(8);
-    v.push(4);
-    v.push(2);
-    v.push(1);
-
-    loop {
-
-        for pattern in v.iter() {
-            lcd_pattern(&p, *pattern);
-        }
-        /*
-        lcd_pattern(&p, !(1 << i));
-        i += 1;
-        if i >= 32 {
-            i = 0;
-        }
-        */
-        /*
-        delay_ms(&p, 500);
-        unsafe{ DBGSTR[0] = 4; }
-
-        delay_ms(&p, 500);
-        unsafe{ DBGSTR[0] = 8; }
-        */
-    } */
 }
