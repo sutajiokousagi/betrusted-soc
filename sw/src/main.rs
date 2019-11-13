@@ -83,11 +83,11 @@ fn main() -> ! {
         Font12x16::render_str("Hello World!")
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(25,10))
-        .draw(&mut display.lock() as &mut BetrustedDisplay);
+        .draw(&mut *display.lock());
 
         let circle = egcircle!((x, y), radius as u32, 
                                stroke_color = Some(BinaryColor::Off), fill_color = Some(BinaryColor::On));
-        circle.draw(&mut display.lock() as &mut BetrustedDisplay);
+        circle.draw(&mut *display.lock());
         
         x = x + vector.x; y = y + vector.y;
         let size: Size = display.lock().size();
