@@ -1,5 +1,26 @@
 #[allow(dead_code)]
 
+/// LCD hardware abstraction layer
+/// 
+/// The API for the betrusted LCD needs to be security-aware. Untrusted content
+/// cannot be rendered into areas reserved for system messages, and untrusted images
+/// should be rendered with a distinct border. As a result, the API will model
+/// the display as a series of objects that are rendered by the system into a
+/// framebuffer. This is less computationally efficient than just handing 
+/// processes a "bag of bits" frame buffer, but allows for fine-grained tuning of
+/// how the OS manages and displays trusted and untrusted information as we learn
+/// more about how the system is used. 
+/// 
+/// On the other side of the API is the HAL. The system exposes the LCD as a 
+/// distinct memory region, along with some CSRs that control the automatic
+/// rastering of the memory to the LCD. The LCD itself has the unique property
+/// in that it will persistently display the last image sent to it, unless 
+/// it is explicitly powered down or cleared.
+/// 
+/// The BetrustedDisplay and LockedBetrustedDisplay objects are considered to be HAL-layer
+/// interfaces. They should not be directly called by untrusted programs, they are intended for
+/// the OS to manipluate the frame buffer directly.
+
 pub mod hal_lcd {
     extern crate embedded_graphics;
     use embedded_graphics::drawable::Pixel;
@@ -17,6 +38,7 @@ pub mod hal_lcd {
     const FB_SIZE: usize = FB_WIDTH_WORDS * FB_LINES; // 44 bytes by 536 lines
         
     /// BetrustedDisplay abstraction for embedded-graphics library
+    /// See LockedBetrustedDisplay for API docs
     pub struct BetrustedDisplay {
             interface: betrusted_pac::Peripherals,
     }
@@ -28,6 +50,7 @@ pub mod hal_lcd {
 
         pub fn init(&self, clk_mhz: u32) {
             lcd_init(&self.interface, clk_mhz);
+            lcd_sync_clear(&self.interface);
         }
 
         pub fn flush(&self) -> Result<(), ()> {
@@ -66,6 +89,14 @@ pub mod hal_lcd {
         }
     }
 
+    /// LockedBetrustedDisplay - Mutex-wrapped BetrustedDisplay object
+    /// 
+    /// Refer to BetrustedDisplay methods by calling the lock() method.
+    /// For calls that need a mutable display, use &mut *display.lock()
+    /// 
+    /// Before using the display, one needs to call init() with the appropriate
+    /// CPU clock frequency. This call will also synchronize the on-board framebuffer
+    /// with the state of the memory cells in the LCD.
     pub struct LockedBetrustedDisplay(Mutex<BetrustedDisplay>);
 
     impl LockedBetrustedDisplay {
@@ -110,25 +141,11 @@ pub mod hal_lcd {
         }
     }
     
-    /// LCD hardware abstraction layer
-    /// 
-    /// The API for the betrusted LCD needs to be security-aware. Untrusted content
-    /// cannot be rendered into areas reserved for system messages, and untrusted images
-    /// should be rendered with a distinct border. As a result, the API will model
-    /// the display as a series of objects that are rendered by the system into a
-    /// framebuffer. This is less computationally efficient than just handing 
-    /// processes a "bag of bits" frame buffer, but allows for fine-grained tuning of
-    /// how the OS manages and displays trusted and untrusted information as we learn
-    /// more about how the system is used. 
-    /// 
-    /// On the other side of the API is the HAL. The system exposes the LCD as a 
-    /// distinct memory region, along with some CSRs that control the automatic
-    /// rastering of the memory to the LCD. The LCD itself has the unique property
-    /// in that it will persistently display the last image sent to it, unless 
-    /// it is explicitly powered down or cleared.
-    /// 
+    /// Beneath this line are pure-HAL layer, and should not be user-visible
     
-    pub fn lcd_clear(p: &betrusted_pac::Peripherals) {
+    /// "synchronous clear" -- must be called on init, so that the state of the LCD
+    /// internal memory is consistent with the state of the frame buffer
+    fn lcd_sync_clear(p: &betrusted_pac::Peripherals) {
         for words in 0..FB_SIZE {
             if words % FB_WIDTH_WORDS != 10 {
                 unsafe{ (*LCD_FB)[words] = 0xFFFF_FFFF; }
@@ -140,39 +157,23 @@ pub mod hal_lcd {
         while lcd_busy(p) {}
     }
 
-    pub fn lcd_test_pattern(p: &betrusted_pac::Peripherals, pattern: u32) {
-        for words in 0..FB_SIZE / 2 {
-            if words % FB_WIDTH_WORDS != 10 {
-                unsafe{ (*LCD_FB)[words] = pattern; }
-            } else {
-                unsafe{ (*LCD_FB)[words] = (pattern & 0xFFFF) | 0x1_0000; }
-            }
-        }
-        lcd_update_dirty(p);
-        while lcd_busy(p) {}
-    }
-
-    pub fn lcd_update_all(p: &betrusted_pac::Peripherals) {
+    fn lcd_update_all(p: &betrusted_pac::Peripherals) {
         p.MEMLCD.command.write( |w| w.update_all().bit(true));
     }
 
-    pub fn lcd_update_dirty(p: &betrusted_pac::Peripherals) {
+    fn lcd_update_dirty(p: &betrusted_pac::Peripherals) {
         p.MEMLCD.command.write( |w| w.update_dirty().bit(true));
     }
 
-    pub fn lcd_init(p: &betrusted_pac::Peripherals, clk_mhz: u32) {
+    fn lcd_init(p: &betrusted_pac::Peripherals, clk_mhz: u32) {
         unsafe{ p.MEMLCD.prescaler.write( |w| w.bits( (clk_mhz / 2_000_000) - 1) ); }
     }
 
-    pub fn lcd_busy(p: &betrusted_pac::Peripherals) -> bool {
+    fn lcd_busy(p: &betrusted_pac::Peripherals) -> bool {
         if p.MEMLCD.busy.read().bits() == 1 {
             true
         } else {
             false
         }
-    }
-
-    pub fn lcd_lines() -> u32 {
-        FB_LINES as u32
     }
 }
