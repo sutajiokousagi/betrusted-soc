@@ -21,159 +21,157 @@
 /// interfaces. They should not be directly called by untrusted programs, they are intended for
 /// the OS to manipluate the frame buffer directly.
 
-pub mod hal_lcd {
-    extern crate embedded_graphics;
-    use embedded_graphics::drawable::Pixel;
-    use embedded_graphics::geometry::Size;
-    use embedded_graphics::pixelcolor::{BinaryColor};
-    use embedded_graphics::DrawTarget;
-    use spin::Mutex;
-    use core::ops::Deref;
+extern crate embedded_graphics;
+use embedded_graphics::drawable::Pixel;
+use embedded_graphics::geometry::Size;
+use embedded_graphics::pixelcolor::{BinaryColor};
+use embedded_graphics::DrawTarget;
+use spin::Mutex;
+use core::ops::Deref;
 
-    /// FIXME: figure out a way to get LCD_FB mapped to the _lcdfb symbol without crashing RLS
-    const LCD_FB: *mut [u32; FB_SIZE] = 0xB000_0000 as *mut [u32; FB_SIZE];
-    const FB_WIDTH_WORDS: usize = 11;
-    const FB_WIDTH_PIXELS: usize = 336;
-    const FB_LINES: usize = 536;
-    const FB_SIZE: usize = FB_WIDTH_WORDS * FB_LINES; // 44 bytes by 536 lines
-        
-    /// BtDisplay abstraction for embedded-graphics library
-    /// See LockedBtDisplay for API docs
-    pub struct BtDisplay {
-            interface: betrusted_pac::Peripherals,
-    }
+/// FIXME: figure out a way to get LCD_FB mapped to the _lcdfb symbol without crashing RLS
+const LCD_FB: *mut [u32; FB_SIZE] = 0xB000_0000 as *mut [u32; FB_SIZE];
+const FB_WIDTH_WORDS: usize = 11;
+const FB_WIDTH_PIXELS: usize = 336;
+const FB_LINES: usize = 536;
+const FB_SIZE: usize = FB_WIDTH_WORDS * FB_LINES; // 44 bytes by 536 lines
     
-    impl BtDisplay {
-        pub fn new() -> Self {
-            unsafe{ BtDisplay{ interface: betrusted_pac::Peripherals::steal(), } }
-        }
+/// BtDisplay abstraction for embedded-graphics library
+/// See LockedBtDisplay for API docs
+pub struct BtDisplay {
+        interface: betrusted_pac::Peripherals,
+}
 
-        pub fn init(&self, clk_mhz: u32) {
-            lcd_init(&self.interface, clk_mhz);
-            lcd_sync_clear(&self.interface);
-        }
-
-        pub fn flush(&self) -> Result<(), ()> {
-            lcd_update_dirty(&self.interface);
-            while lcd_busy(&self.interface) {} // should this be blocking??
-
-            // clear all the dirty bits, under the theory that it's time-wise cheaper on average
-            // to visit every line and clear the dirty bits than it is to do an update_all()
-            for lines in 0..FB_LINES {
-                unsafe{
-                    (*LCD_FB)[lines * FB_WIDTH_WORDS + (FB_WIDTH_WORDS - 1)] &= 0x0000_FFFF;
-                }
-            }
-            Ok(())
-        }
-        
-        pub fn clear(&self) {
-            let mut line_dirty: bool = false;
-            for words in 0..FB_SIZE {
-                if words % FB_WIDTH_WORDS != 10 {
-                    unsafe{ 
-                        if (*LCD_FB)[words] != 0xFFFF_FFFF {
-                            (*LCD_FB)[words] = 0xFFFF_FFFF;
-                            line_dirty = true;
-                        }
-                    }
-                } else {
-                    unsafe{ 
-                        if (*LCD_FB)[words] & 0xFFFF != 0xFFFF || line_dirty {
-                            (*LCD_FB)[words] = 0x0001_FFFF;
-                        }
-                        line_dirty = false;
-                    }
-                }
-            }
-        }
+impl BtDisplay {
+    pub fn new() -> Self {
+        unsafe{ BtDisplay{ interface: betrusted_pac::Peripherals::steal(), } }
     }
 
-    /// LockedBtDisplay - Mutex-wrapped BtDisplay object
-    /// 
-    /// Refer to BtDisplay methods by calling the lock() method.
-    /// For calls that need a mutable display, use &mut *display.lock()
-    /// 
-    /// Before using the display, one needs to call init() with the appropriate
-    /// CPU clock frequency. This call will also synchronize the on-board framebuffer
-    /// with the state of the memory cells in the LCD.
-    pub struct LockedBtDisplay(Mutex<BtDisplay>);
-
-    impl LockedBtDisplay {
-        pub fn empty() -> LockedBtDisplay {
-            LockedBtDisplay(Mutex::new(BtDisplay::new()))
-        }
-
-        pub fn new() -> LockedBtDisplay {
-            LockedBtDisplay(Mutex::new(BtDisplay::new()))
-        }
+    pub fn init(&self, clk_mhz: u32) {
+        lcd_init(&self.interface, clk_mhz);
+        lcd_sync_clear(&self.interface);
     }
 
-    impl Deref for LockedBtDisplay {
-        type Target = Mutex<BtDisplay>;
+    pub fn flush(&self) -> Result<(), ()> {
+        lcd_update_dirty(&self.interface);
+        while lcd_busy(&self.interface) {} // should this be blocking??
 
-        fn deref(&self) -> &Mutex<BtDisplay> {
-            &self.0
-        }
-    }
-
-    impl DrawTarget<BinaryColor> for BtDisplay {
-        fn size(&self) -> Size {
-            Size::new(FB_WIDTH_PIXELS as u32, FB_LINES as u32)
-        }
-
-        fn draw_pixel(&mut self, pixel:Pixel<BinaryColor>) {
-            let Pixel(coord, color) = pixel;
-            match color {
-                BinaryColor::Off => 
-                   unsafe{ 
-                       (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] |= 
-                          1 << (coord.x % 32); },
-                BinaryColor::On =>
-                   unsafe{ 
-                       (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] &= 
-                          !(1 << (coord.x % 32)); },
-            }
-            // set the dirty bit on the line
+        // clear all the dirty bits, under the theory that it's time-wise cheaper on average
+        // to visit every line and clear the dirty bits than it is to do an update_all()
+        for lines in 0..FB_LINES {
             unsafe{
-                (*LCD_FB)[(coord.y * FB_WIDTH_WORDS as i32 + (FB_WIDTH_WORDS as i32 - 1)) as usize] |= 0x0001_0000;
+                (*LCD_FB)[lines * FB_WIDTH_WORDS + (FB_WIDTH_WORDS - 1)] &= 0x0000_FFFF;
             }
         }
+        Ok(())
     }
     
-    /// Beneath this line are pure-HAL layer, and should not be user-visible
-    
-    /// "synchronous clear" -- must be called on init, so that the state of the LCD
-    /// internal memory is consistent with the state of the frame buffer
-    fn lcd_sync_clear(p: &betrusted_pac::Peripherals) {
+    pub fn clear(&self) {
+        let mut line_dirty: bool = false;
         for words in 0..FB_SIZE {
             if words % FB_WIDTH_WORDS != 10 {
-                unsafe{ (*LCD_FB)[words] = 0xFFFF_FFFF; }
+                unsafe{ 
+                    if (*LCD_FB)[words] != 0xFFFF_FFFF {
+                        (*LCD_FB)[words] = 0xFFFF_FFFF;
+                        line_dirty = true;
+                    }
+                }
             } else {
-                unsafe{ (*LCD_FB)[words] = 0x0000_FFFF; } // don't set the dirty bit
+                unsafe{ 
+                    if (*LCD_FB)[words] & 0xFFFF != 0xFFFF || line_dirty {
+                        (*LCD_FB)[words] = 0x0001_FFFF;
+                    }
+                    line_dirty = false;
+                }
             }
         }
-        lcd_update_all(p); // because we force an all update here
-        while lcd_busy(p) {}
+    }
+}
+
+/// LockedBtDisplay - Mutex-wrapped BtDisplay object
+/// 
+/// Refer to BtDisplay methods by calling the lock() method.
+/// For calls that need a mutable display, use &mut *display.lock()
+/// 
+/// Before using the display, one needs to call init() with the appropriate
+/// CPU clock frequency. This call will also synchronize the on-board framebuffer
+/// with the state of the memory cells in the LCD.
+pub struct LockedBtDisplay(Mutex<BtDisplay>);
+
+impl LockedBtDisplay {
+    pub fn empty() -> LockedBtDisplay {
+        LockedBtDisplay(Mutex::new(BtDisplay::new()))
     }
 
-    fn lcd_update_all(p: &betrusted_pac::Peripherals) {
-        p.MEMLCD.command.write( |w| w.update_all().bit(true));
+    pub fn new() -> LockedBtDisplay {
+        LockedBtDisplay(Mutex::new(BtDisplay::new()))
+    }
+}
+
+impl Deref for LockedBtDisplay {
+    type Target = Mutex<BtDisplay>;
+
+    fn deref(&self) -> &Mutex<BtDisplay> {
+        &self.0
+    }
+}
+
+impl DrawTarget<BinaryColor> for BtDisplay {
+    fn size(&self) -> Size {
+        Size::new(FB_WIDTH_PIXELS as u32, FB_LINES as u32)
     }
 
-    fn lcd_update_dirty(p: &betrusted_pac::Peripherals) {
-        p.MEMLCD.command.write( |w| w.update_dirty().bit(true));
-    }
-
-    fn lcd_init(p: &betrusted_pac::Peripherals, clk_mhz: u32) {
-        unsafe{ p.MEMLCD.prescaler.write( |w| w.bits( (clk_mhz / 2_000_000) - 1) ); }
-    }
-
-    fn lcd_busy(p: &betrusted_pac::Peripherals) -> bool {
-        if p.MEMLCD.busy.read().bits() == 1 {
-            true
-        } else {
-            false
+    fn draw_pixel(&mut self, pixel:Pixel<BinaryColor>) {
+        let Pixel(coord, color) = pixel;
+        match color {
+            BinaryColor::Off => 
+                unsafe{ 
+                    (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] |= 
+                        1 << (coord.x % 32); },
+            BinaryColor::On =>
+                unsafe{ 
+                    (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] &= 
+                        !(1 << (coord.x % 32)); },
         }
+        // set the dirty bit on the line
+        unsafe{
+            (*LCD_FB)[(coord.y * FB_WIDTH_WORDS as i32 + (FB_WIDTH_WORDS as i32 - 1)) as usize] |= 0x0001_0000;
+        }
+    }
+}
+
+/// Beneath this line are pure-HAL layer, and should not be user-visible
+
+/// "synchronous clear" -- must be called on init, so that the state of the LCD
+/// internal memory is consistent with the state of the frame buffer
+fn lcd_sync_clear(p: &betrusted_pac::Peripherals) {
+    for words in 0..FB_SIZE {
+        if words % FB_WIDTH_WORDS != 10 {
+            unsafe{ (*LCD_FB)[words] = 0xFFFF_FFFF; }
+        } else {
+            unsafe{ (*LCD_FB)[words] = 0x0000_FFFF; } // don't set the dirty bit
+        }
+    }
+    lcd_update_all(p); // because we force an all update here
+    while lcd_busy(p) {}
+}
+
+fn lcd_update_all(p: &betrusted_pac::Peripherals) {
+    p.MEMLCD.command.write( |w| w.update_all().bit(true));
+}
+
+fn lcd_update_dirty(p: &betrusted_pac::Peripherals) {
+    p.MEMLCD.command.write( |w| w.update_dirty().bit(true));
+}
+
+fn lcd_init(p: &betrusted_pac::Peripherals, clk_mhz: u32) {
+    unsafe{ p.MEMLCD.prescaler.write( |w| w.bits( (clk_mhz / 2_000_000) - 1) ); }
+}
+
+fn lcd_busy(p: &betrusted_pac::Peripherals) -> bool {
+    if p.MEMLCD.busy.read().bits() == 1 {
+        true
+    } else {
+        false
     }
 }

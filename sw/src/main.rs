@@ -44,9 +44,9 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!()
 }
 
-use betrusted_hal::hal_i2c::hal_i2c::*;
-use betrusted_hal::hal_time::hal_time::*;
-use betrusted_hal::hal_lcd::hal_lcd::*;
+use betrusted_hal::hal_i2c::*;
+use betrusted_hal::hal_time::*;
+use betrusted_hal::hal_lcd::*;
 use betrusted_hal::hal_com::*;
 use embedded_graphics::prelude::*;
 use embedded_graphics::egcircle;
