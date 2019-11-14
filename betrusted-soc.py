@@ -267,8 +267,8 @@ class CRG(Module, AutoCSR):
                          p_CLKOUT0_DIVIDE_F=6.0, p_CLKOUT0_PHASE=0.0,
                          o_CLKOUT0=pll_sys,
 
-                         # 24 MHz - spiclk
-                         p_CLKOUT1_DIVIDE=25, p_CLKOUT1_PHASE=0,
+                         # 20 MHz - spiclk
+                         p_CLKOUT1_DIVIDE=30, p_CLKOUT1_PHASE=0,
                          o_CLKOUT1=pll_spiclk,
 
                          # DRP
@@ -413,7 +413,7 @@ class BaseSoC(SoCCore):
         self.platform.add_platform_command(
             "create_clock -name sys_clk -period 10.0 [get_nets sys_clk]")
         self.platform.add_platform_command(
-            "create_clock -name spi_clk -period 41.6666 [get_nets spi_clk]")
+            "create_clock -name spi_clk -period 50.0 [get_nets spi_clk]")
         self.platform.add_platform_command(
             "create_clock -name lpclk -period 30517.5781 [get_nets lpclk]") # 32768 Hz in ns
         self.platform.add_platform_command(
@@ -458,8 +458,11 @@ class BaseSoC(SoCCore):
         self.add_csr("com")
         # 20.83ns = 1/2 of 24MHz clock, we are doing falling-to-rising timing
         # up5k tsu = -0.5ns, th = 5.55ns, tpdmax = 10ns
+        # in reality, we are measuring a Tpd from the UP5K of 17ns. Routed input delay is ~3.9ns, which means
+        # the fastest clock period supported would be 23.9MHz - just shy of 24MHz, with no margin to spare.
+        # slow down clock period of SPI to 20MHz, this gives us about a 4ns margin for setup for PVT variation
         self.platform.add_platform_command("set_input_delay -clock [get_clocks spi_clk] -min -add_delay 0.5 [get_ports {{com_miso}}]") # could be as low as -0.5ns but why not
-        self.platform.add_platform_command("set_input_delay -clock [get_clocks spi_clk] -max -add_delay 10.0 [get_ports {{com_miso}}]")
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks spi_clk] -max -add_delay 17.5 [get_ports {{com_miso}}]")
         self.platform.add_platform_command("set_output_delay -clock [get_clocks spi_clk] -min -add_delay 6.0 [get_ports {{com_mosi com_csn}}]")
         self.platform.add_platform_command("set_output_delay -clock [get_clocks spi_clk] -max -add_delay 16.0 [get_ports {{com_mosi com_csn}}]")  # could be as large as 21ns but why not
         # cross domain clocking is handled with explicit software barrires, or with multiregs
