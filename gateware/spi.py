@@ -2,7 +2,27 @@ from litex.soc.integration.doc import AutoDoc, ModuleDoc
 from litex.soc.interconnect.csr_eventmanager import *
 
 from migen.genlib.cdc import MultiReg
-from migen.genlib.cdc import PulseSynchronizer
+from migen.genlib.cdc import BlindTransfer
+
+class PulseStretch(Module):  # simple module to stretch a pulse out by 10 cycles to cross into the slower SPI domain
+    def __init__(self):
+        self.i = Signal()
+        self.o = Signal()
+
+        i_r = Signal()
+        count = Signal(4)
+        self.sync += [
+            i_r.eq(self.i),
+            If(self.i & ~i_r,  # rising edge
+               count.eq(10),
+               self.o.eq(1),
+            ).Elif(count != 0,
+              self.o.eq(1),
+              count.eq(count - 1),
+            ).Else(
+                self.o.eq(0)
+            )
+        ]
 
 class SpiMaster(Module, AutoCSR, AutoDoc):
     def __init__(self, pads):
@@ -38,15 +58,18 @@ class SpiMaster(Module, AutoCSR, AutoDoc):
             ),
         ]
 
-        self.tx = CSRStorage(16, name="tx", description="""Tx data, for MOSI""")
+        self.tx = CSRStorage(16, name="tx", description="""Tx data, for MOSI.""")
+        # note to self: we can't auto-initiate on TX write because a 16-bit CSR is split into two 8-bit registers :(
+        # thus we need a "go" bit
         self.rx = CSRStatus(16, name="rx", description="""Rx data, from MISO""")
         self.control = CSRStorage(fields=[
-            CSRField("go", description="Initiate a SPI cycle by writing a `1`. Does not automatically clear."),
+            CSRField("clrdone", description="Clear the done field", pulse=True),
+            CSRField("go", description="Initiates the SPI transaction", pulse=True),
             CSRField("intena", description="Enable interrupt on transaction finished"),
         ])
         self.status = CSRStatus(fields=[
             CSRField("tip", description="Set when transaction is in progress"),
-            CSRField("txfull", description="Set when Tx register is full"),
+            CSRField("done", description="Set when transaction is finished, manually cleared"),
         ])
 
         self.submodules.ev = EventManager()
@@ -58,19 +81,29 @@ class SpiMaster(Module, AutoCSR, AutoDoc):
         self.tx_r = Signal(16)
         self.rx_r = Signal(16)
         self.tip_r = Signal()
-        self.txfull_r = Signal()
         self.go_r = Signal()
         self.tx_written = Signal()
 
         self.specials += MultiReg(self.tip_r, self.status.fields.tip)
-        self.specials += MultiReg(self.txfull_r, self.status.fields.txfull)
-        self.specials += MultiReg(self.control.fields.go, self.go_r, "spi")
-        self.specials += MultiReg(self.tx.re, self.tx_written, "spi")
-        # extract rising edge of go -- necessary in case of huge disparity in sysclk-to-spi clock domain
-        self.go_d = Signal()
-        self.go_edge = Signal()
-        self.sync.spi += self.go_d.eq(self.go_r)
-        self.comb += self.go_edge.eq(self.go_r & ~self.go_d)
+
+        self.submodules.txwrite = PulseStretch() # stretch the go signal to ensure it's picked up in the SPI domain
+        self.comb += self.txwrite.i.eq(self.control.fields.go)
+        self.comb += self.tx_written.eq(self.txwrite.o)
+        tx_written_d = Signal()
+        tx_go = Signal()
+        self.sync.spi += tx_written_d.eq(self.tx_written)
+        self.comb += tx_go.eq(~self.tx_written & tx_written_d)  # falling edge of tx_written pulse, guarantees tx.storage is stable
+
+        setdone = Signal()
+        self.sync += [
+            If( self.control.fields.clrdone,
+                self.status.fields.done.eq(0)
+            ).Elif( setdone,
+                self.status.fields.done.eq(1)
+            ).Else(
+                self.status.fields.done.eq(self.status.fields.done)
+            )
+        ]
 
         self.csn_r = Signal(reset=1)
         self.comb += self.csn.eq(self.csn_r)
@@ -80,12 +113,11 @@ class SpiMaster(Module, AutoCSR, AutoDoc):
         self.submodules += fsm
         spicount = Signal(4)
         fsm.act("IDLE",
-                If(self.go_edge,
+                If(tx_go,
                    NextState("RUN"),
                    NextValue(self.tx_r, Cat(0, self.tx.storage[:15])),
                    # stability guaranteed so no synchronizer necessary
                    NextValue(spicount, 15),
-                   NextValue(self.txfull_r, 0),
                    NextValue(self.tip_r, 1),
                    NextValue(self.csn_r, 0),
                    NextValue(self.mosi, self.tx.storage[15]),
@@ -93,9 +125,6 @@ class SpiMaster(Module, AutoCSR, AutoDoc):
                 ).Else(
                     NextValue(self.tip_r, 0),
                     NextValue(self.csn_r, 1),
-                    If(self.tx_written,
-                       NextValue(self.txfull_r, 1),
-                    ),
                 )
         )
         fsm.act("RUN",
@@ -108,6 +137,7 @@ class SpiMaster(Module, AutoCSR, AutoDoc):
                     NextValue(self.csn_r, 1),
                     NextValue(self.tip_r, 0),
                     NextState("IDLE"),
+                    setdone.eq(1),
                 ),
         )
 
