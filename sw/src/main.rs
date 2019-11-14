@@ -133,7 +133,7 @@ fn main() -> ! {
         DBGSTR[2] = cr;
     }
 
-    let display: LockedBetrustedDisplay = LockedBetrustedDisplay::new();
+    let display: LockedBtDisplay = LockedBtDisplay::new();
     display.lock().init(CONFIG_CLOCK_FREQUENCY);
 
     let radius: u32 = 14;

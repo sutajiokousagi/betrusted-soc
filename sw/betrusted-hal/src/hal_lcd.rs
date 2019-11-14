@@ -17,7 +17,7 @@
 /// in that it will persistently display the last image sent to it, unless 
 /// it is explicitly powered down or cleared.
 /// 
-/// The BetrustedDisplay and LockedBetrustedDisplay objects are considered to be HAL-layer
+/// The BtDisplay and LockedBtDisplay objects are considered to be HAL-layer
 /// interfaces. They should not be directly called by untrusted programs, they are intended for
 /// the OS to manipluate the frame buffer directly.
 
@@ -37,15 +37,15 @@ pub mod hal_lcd {
     const FB_LINES: usize = 536;
     const FB_SIZE: usize = FB_WIDTH_WORDS * FB_LINES; // 44 bytes by 536 lines
         
-    /// BetrustedDisplay abstraction for embedded-graphics library
-    /// See LockedBetrustedDisplay for API docs
-    pub struct BetrustedDisplay {
+    /// BtDisplay abstraction for embedded-graphics library
+    /// See LockedBtDisplay for API docs
+    pub struct BtDisplay {
             interface: betrusted_pac::Peripherals,
     }
     
-    impl BetrustedDisplay {
+    impl BtDisplay {
         pub fn new() -> Self {
-            unsafe{ BetrustedDisplay{ interface: betrusted_pac::Peripherals::steal(), } }
+            unsafe{ BtDisplay{ interface: betrusted_pac::Peripherals::steal(), } }
         }
 
         pub fn init(&self, clk_mhz: u32) {
@@ -89,35 +89,35 @@ pub mod hal_lcd {
         }
     }
 
-    /// LockedBetrustedDisplay - Mutex-wrapped BetrustedDisplay object
+    /// LockedBtDisplay - Mutex-wrapped BtDisplay object
     /// 
-    /// Refer to BetrustedDisplay methods by calling the lock() method.
+    /// Refer to BtDisplay methods by calling the lock() method.
     /// For calls that need a mutable display, use &mut *display.lock()
     /// 
     /// Before using the display, one needs to call init() with the appropriate
     /// CPU clock frequency. This call will also synchronize the on-board framebuffer
     /// with the state of the memory cells in the LCD.
-    pub struct LockedBetrustedDisplay(Mutex<BetrustedDisplay>);
+    pub struct LockedBtDisplay(Mutex<BtDisplay>);
 
-    impl LockedBetrustedDisplay {
-        pub fn empty() -> LockedBetrustedDisplay {
-            LockedBetrustedDisplay(Mutex::new(BetrustedDisplay::new()))
+    impl LockedBtDisplay {
+        pub fn empty() -> LockedBtDisplay {
+            LockedBtDisplay(Mutex::new(BtDisplay::new()))
         }
 
-        pub fn new() -> LockedBetrustedDisplay {
-            LockedBetrustedDisplay(Mutex::new(BetrustedDisplay::new()))
+        pub fn new() -> LockedBtDisplay {
+            LockedBtDisplay(Mutex::new(BtDisplay::new()))
         }
     }
 
-    impl Deref for LockedBetrustedDisplay {
-        type Target = Mutex<BetrustedDisplay>;
+    impl Deref for LockedBtDisplay {
+        type Target = Mutex<BtDisplay>;
 
-        fn deref(&self) -> &Mutex<BetrustedDisplay> {
+        fn deref(&self) -> &Mutex<BtDisplay> {
             &self.0
         }
     }
 
-    impl DrawTarget<BinaryColor> for BetrustedDisplay {
+    impl DrawTarget<BinaryColor> for BtDisplay {
         fn size(&self) -> Size {
             Size::new(FB_WIDTH_PIXELS as u32, FB_LINES as u32)
         }
