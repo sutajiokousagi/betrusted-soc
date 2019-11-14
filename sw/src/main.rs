@@ -47,6 +47,7 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 use betrusted_hal::hal_i2c::hal_i2c::*;
 use betrusted_hal::hal_time::hal_time::*;
 use betrusted_hal::hal_lcd::hal_lcd::*;
+use betrusted_hal::hal_com::*;
 use embedded_graphics::prelude::*;
 use embedded_graphics::egcircle;
 use embedded_graphics::pixelcolor::BinaryColor;
@@ -54,7 +55,6 @@ use embedded_graphics::fonts::Font12x16;
 use embedded_graphics::geometry::Point;
 use embedded_graphics::primitives::Rectangle;
 use alloc::vec::Vec;
-use alloc::string::String;
 
 pub struct Bounce {
     vector: Point,
@@ -138,20 +138,55 @@ fn main() -> ! {
 
     let radius: u32 = 14;
     let size: Size = display.lock().size();
-    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, 50), Point::new(size.width as i32, size.height as i32)));
+    let mut cur_time: u32 = get_time_ms(&p);
+    let mut stat_array: [u16; 8] = [0; 8];
+    let line_height: i32 = 18;
+    let left_margin: i32 = 10;
+    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 7), Point::new(size.width as i32, size.height as i32)));
+    let mut tx_index: usize = 0;
     loop {
-        let uptime = format!{"Uptime {}s", (get_time_ms(&p) / 1000) as u32};
         display.lock().clear();
+        let mut cur_line: i32 = 5;
+
+        let uptime = format!{"Uptime {}s", (get_time_ms(&p) / 1000) as u32};
         Font12x16::render_str(&uptime)
         .stroke_color(Some(BinaryColor::On))
-        .translate(Point::new(10,5))
+        .translate(Point::new(left_margin,cur_line))
         .draw(&mut *display.lock());
+        cur_line += line_height;
 
         bouncy_ball.update();
         let circle = egcircle!(bouncy_ball.loc, bouncy_ball.radius, 
                                stroke_color = Some(BinaryColor::Off), fill_color = Some(BinaryColor::On));
         circle.draw(&mut *display.lock());
         
+        // every 100ms ping the EC and update a different record
+        if get_time_ms(&p) - cur_time > 100 {
+            cur_time = get_time_ms(&p);
+            if tx_index == 0 {
+                com_txrx(&p, 0x8000 as u16); // send the pointer reset command
+            } else if tx_index < 9 {
+                stat_array[tx_index - 1] = com_txrx(&p, 0) as u16;
+            }
+            tx_index += 1;
+            tx_index %= 9;
+        }
+
+        for i in 0..4 {
+            // but update the result every loop iteration
+            let dbg = format!{"s{}: 0x{:04x}  s{}: 0x{:04x}", i*2, stat_array[i], i*2+1, stat_array[i*2+1]};
+            Font12x16::render_str(&dbg)
+            .stroke_color(Some(BinaryColor::On))
+            .translate(Point::new(left_margin, cur_line))
+            .draw(&mut *display.lock());
+            cur_line += line_height;
+        }
+        let dbg = format!{"voltage: {}mV", stat_array[7]};
+        Font12x16::render_str(&dbg)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+
         display.lock().flush().unwrap();
     }
 }
