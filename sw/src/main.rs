@@ -160,13 +160,13 @@ fn main() -> ! {
                                stroke_color = Some(BinaryColor::Off), fill_color = Some(BinaryColor::On));
         circle.draw(&mut *display.lock());
         
-        // every 100ms ping the EC and update a different record
+        // ping the EC and update various records over time
         if get_time_ms(&p) - cur_time > 100 {
             cur_time = get_time_ms(&p);
             if tx_index == 0 {
                 com_txrx(&p, 0x8000 as u16); // send the pointer reset command
             } else if tx_index < 9 {
-                stat_array[tx_index - 1] = com_txrx(&p, 0) as u16;
+                stat_array[tx_index - 1] = com_txrx(&p, 0xDEAD) as u16; // the transmit is a dummy byte
             }
             tx_index += 1;
             tx_index %= 9;
@@ -174,7 +174,7 @@ fn main() -> ! {
 
         for i in 0..4 {
             // but update the result every loop iteration
-            let dbg = format!{"s{}: 0x{:04x}  s{}: 0x{:04x}", i*2, stat_array[i], i*2+1, stat_array[i*2+1]};
+            let dbg = format!{"s{}: 0x{:04x}  s{}: 0x{:04x}", i*2, stat_array[i*2], i*2+1, stat_array[i*2+1]};
             Font12x16::render_str(&dbg)
             .stroke_color(Some(BinaryColor::On))
             .translate(Point::new(left_margin, cur_line))
