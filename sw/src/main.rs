@@ -139,10 +139,10 @@ fn main() -> ! {
     let radius: u32 = 14;
     let size: Size = display.lock().size();
     let mut cur_time: u32 = get_time_ms(&p);
-    let mut stat_array: [u16; 8] = [0; 8];
+    let mut stat_array: [u16; 9] = [0; 9];
     let line_height: i32 = 18;
     let left_margin: i32 = 10;
-    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 7), Point::new(size.width as i32, size.height as i32)));
+    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 8), Point::new(size.width as i32, size.height as i32)));
     let mut tx_index: usize = 0;
     loop {
         display.lock().clear();
@@ -165,11 +165,11 @@ fn main() -> ! {
             cur_time = get_time_ms(&p);
             if tx_index == 0 {
                 com_txrx(&p, 0x8000 as u16); // send the pointer reset command
-            } else if tx_index < 9 {
+            } else if tx_index < stat_array.len() + 1 {
                 stat_array[tx_index - 1] = com_txrx(&p, 0xDEAD) as u16; // the transmit is a dummy byte
             }
             tx_index += 1;
-            tx_index %= 9;
+            tx_index = tx_index % (stat_array.len() + 2);
         }
 
         for i in 0..4 {
@@ -182,6 +182,13 @@ fn main() -> ! {
             cur_line += line_height;
         }
         let dbg = format!{"voltage: {}mV", stat_array[7]};
+        Font12x16::render_str(&dbg)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+        cur_line += line_height;
+
+        let dbg = format!{"avg current: {}mA", (stat_array[8] as i16)};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
