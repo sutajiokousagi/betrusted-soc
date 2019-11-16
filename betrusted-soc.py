@@ -33,6 +33,7 @@ from gateware import rtl_i2c
 from gateware import ticktimer
 from migen.genlib.cdc import MultiReg
 from gateware import spinor
+from gateware import keyboard
 
 import lxsocdoc
 
@@ -108,9 +109,11 @@ _io = [
 
     # Keyboard scan matrix
     ("kbd", 0,
-        Subsignal("key", Pins("F15" "E17" "G17" "E14" "E15" "H15" "G15" "H14"
-                              "H16" "H17" "E18" "F18" "G18" "E13" "H18" "F13"
-                              "H13" "J13" "K13"), IOStandard("LVCMOS33")),
+        # "key" 0-8 are rows, 9-18 are columns
+        Subsignal("row", Pins("F15", "E17", "G17", "E14", "E15", "H15", "G15", "H14",
+                              "H16"), IOStandard("LVCMOS33"), Misc("PULLDOWN True")),  # column scan with 1's, so PD to default 0
+        Subsignal("col", Pins("H17", "E18", "F18", "G18", "E13", "H18", "F13",
+                              "H13", "J13", "K13"), IOStandard("LVCMOS33")),
     ),
 
     # LCD interface
@@ -498,7 +501,12 @@ class BaseSoC(SoCCore):
             self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
 
-        ## TODO: keyboard, XADC, audio, wide-width/fast SPINOR, sdcard
+        # Keyboard module
+        self.submodules.keyboard = ClockDomainsRenamer(cd_remapping={"kbd":"lpclk"})(keyboard.KeyScan(platform.request("kbd")))
+        self.add_csr("keyboard")
+        self.add_interrupt("keyboard")
+
+        ## TODO: XADC, audio, wide-width/fast SPINOR, sdcard
 
 def main():
     if os.environ['PYTHONHASHSEED'] != "1":
