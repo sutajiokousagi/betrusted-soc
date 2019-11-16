@@ -138,18 +138,25 @@ class KeyScan(Module, AutoCSR, AutoDoc):
                     rowdiff[r].eq(rowdiff[r])
                 )
             ]
-        # fire an interrupt during the reset_scan phase
+        # fire an interrupt during the reset_scan phase. Delay by 2 cycles so that rowchange can pick up a new value
+        # before the "pending" bit is set.
+        kp_d = Signal()
+        kp_d2 = Signal()
         kp_r = Signal()
         kp_r2 = Signal()
-        self.sync += kp_r.eq( rowdiff != 0 )
+        self.sync.kbd += kp_d.eq( rowdiff != 0 )
+        self.sync.kbd += kp_d2.eq( kp_d )
+        self.sync += kp_r.eq( kp_d2 )
         self.sync += kp_r2.eq( kp_r )
         self.comb += self.ev.keypressed.trigger.eq( kp_r & ~kp_r2 )
 
-        self.rowchange = CSRStatus(rows.nbits, name="rowchange", description="""The rows that changed since the last scan""")
+        self.rowchange = CSRStatus(rows.nbits, name="rowchange",
+                                   description="""The rows that changed at the point of interrupt generation. 
+                                   Does not update again until the interrupt is serviced.""")
         reset_scan_sys = Signal()
         self.specials += MultiReg(reset_scan, reset_scan_sys)
         self.sync += [
-            If(reset_scan_sys,
+            If(reset_scan_sys & ~self.ev.keypressed.pending,
                self.rowchange.status.eq(rowdiff)
             ).Else(
                 self.rowchange.status.eq(self.rowchange.status)

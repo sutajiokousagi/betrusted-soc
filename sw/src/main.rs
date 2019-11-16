@@ -48,6 +48,7 @@ use betrusted_hal::hal_i2c::*;
 use betrusted_hal::hal_time::*;
 use betrusted_hal::hal_lcd::*;
 use betrusted_hal::hal_com::*;
+use betrusted_hal::hal_kbd::*;
 use embedded_graphics::prelude::*;
 use embedded_graphics::egcircle;
 use embedded_graphics::pixelcolor::BinaryColor;
@@ -142,8 +143,10 @@ fn main() -> ! {
     let mut stat_array: [u16; 9] = [0; 9];
     let line_height: i32 = 18;
     let left_margin: i32 = 10;
-    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 8), Point::new(size.width as i32, size.height as i32)));
+    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 9), Point::new(size.width as i32, size.height as i32)));
     let mut tx_index: usize = 0;
+    let mut row: u16 = 0;
+    let mut col: u16 = 0;
     loop {
         display.lock().clear();
         let mut cur_line: i32 = 5;
@@ -189,6 +192,23 @@ fn main() -> ! {
         cur_line += line_height;
 
         let dbg = format!{"avg current: {}mA", (stat_array[8] as i16)};
+        Font12x16::render_str(&dbg)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+        cur_line += line_height;
+
+        if p.KEYBOARD.ev_pending.read().bits() != 0 {
+            row = kbd_rowchange(&p);
+            for i in 0..9 {
+                if (row >> i) & 1 == 1 {
+                    col = kbd_getrow(&p, i);
+                }
+            }
+            // clear the pending bit
+            unsafe{ p.KEYBOARD.ev_pending.write(|w| w.bits(1)); }
+        }
+        let dbg = format!{"row_vec:0x{:x} col_num:{}", row, col};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
