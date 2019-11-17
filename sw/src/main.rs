@@ -137,6 +137,8 @@ fn main() -> ! {
     let display: LockedBtDisplay = LockedBtDisplay::new();
     display.lock().init(CONFIG_CLOCK_FREQUENCY);
 
+    let mut keyboard: KeyManager = KeyManager::new();
+
     let radius: u32 = 14;
     let size: Size = display.lock().size();
     let mut cur_time: u32 = get_time_ms(&p);
@@ -145,8 +147,9 @@ fn main() -> ! {
     let left_margin: i32 = 10;
     let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 9), Point::new(size.width as i32, size.height as i32)));
     let mut tx_index: usize = 0;
-    let mut row: u16 = 0;
-    let mut col: u16 = 0;
+    let mut row: usize = 0;
+    let mut col: usize = 0;
+    let mut num: usize = 0;
     loop {
         display.lock().clear();
         let mut cur_line: i32 = 5;
@@ -199,16 +202,21 @@ fn main() -> ! {
         cur_line += line_height;
 
         if p.KEYBOARD.ev_pending.read().bits() != 0 {
-            row = kbd_rowchange(&p);
-            for i in 0..9 {
-                if (row >> i) & 1 == 1 {
-                    col = kbd_getrow(&p, i);
-                }
+            //let (keydown, _keyup) = keyboard.update(keyboard.getcodes());
+            let keydown = keyboard.getcodes();
+
+            if keydown.is_some() { 
+                let mut keyvect = keydown.unwrap();
+                num = keyvect.len();
+                // for now we just grab the very first element, if we have multi-key we ignore it
+                let (r, c) = keyvect.pop().unwrap();
+                row = r;
+                col = c;
             }
             // clear the pending bit
             unsafe{ p.KEYBOARD.ev_pending.write(|w| w.bits(1)); }
         }
-        let dbg = format!{"row_vec:0x{:x} col_num:{}", row, col};
+        let dbg = format!{"row:{:x} col:{} num:{}", row, col, num};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))

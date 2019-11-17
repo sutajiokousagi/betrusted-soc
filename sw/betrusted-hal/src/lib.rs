@@ -1,5 +1,7 @@
 #![no_std]
 
+extern crate alloc;
+
 pub mod hal_i2c;
 pub mod hal_time;
 pub mod hal_lcd;
