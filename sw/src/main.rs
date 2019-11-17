@@ -216,7 +216,14 @@ fn main() -> ! {
             // clear the pending bit
             unsafe{ p.KEYBOARD.ev_pending.write(|w| w.bits(1)); }
         }
-        let dbg = format!{"row:{:x} col:{} num:{}", row, col, num};
+        let scancode = map_dvorak((row, col));
+        let c: char;
+        match scancode.key {
+            None => c = ' ',
+            _ => c = scancode.key.unwrap(),
+        }
+
+        let dbg = format!{"row:{:x} col:{} num:{} char:{}", row, col, num, c};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))

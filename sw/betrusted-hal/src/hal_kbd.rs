@@ -61,13 +61,13 @@ fn kbd_getcodes(p: &betrusted_pac::Peripherals) -> Option<Vec<(usize,usize)>> {
 /// holds the four basic possible values of a key location
 pub struct ScanCode {
     /// base key value
-    key: Option<char>,    
+    pub key: Option<char>,    
     /// tap blue shift key, then key
-    shift: Option<char>,  
+    pub shift: Option<char>,  
     /// hold blue shift key, then key
-    hold: Option<char>,    
+    pub hold: Option<char>,    
     /// hold orange shift key, then key
-    alt: Option<char>,    
+    pub alt: Option<char>,    
 }
 
 /// This is the main keyboard manager construct.
@@ -150,6 +150,7 @@ impl KeyManager {
 
         (retdowns, retups)
     }
+}
 
     /// Compute the dvorak key mapping of row/col to key tuples
     pub fn map_dvorak(code: (usize,usize)) -> ScanCode {
@@ -170,13 +171,51 @@ impl KeyManager {
             (1, 2) => ScanCode{key: Some('p'), shift: Some('P'), hold: Some('#'), alt: None},
             (1, 3) => ScanCode{key: Some('y'), shift: Some('Y'), hold: Some('&'), alt: None},
             (1, 4) => ScanCode{key: Some('f'), shift: Some('F'), hold: Some('*'), alt: None},
-            (1, 5) => ScanCode{key: Some('g'), shift: Some('G'), hold: Some('-'), alt: None},
-            (1, 6) => ScanCode{key: Some('c'), shift: Some('C'), hold: Some('+'), alt: None},
-            (1, 7) => ScanCode{key: Some('r'), shift: Some('R'), hold: Some('('), alt: None},
-            (1, 8) => ScanCode{key: Some('l'), shift: Some('L'), hold: Some(')'), alt: None},
-            (1, 9) => ScanCode{key: Some('?'), shift: Some('?'), hold: Some('!'), alt: None},
+            (5, 5) => ScanCode{key: Some('g'), shift: Some('G'), hold: Some('-'), alt: None},
+            (5, 6) => ScanCode{key: Some('c'), shift: Some('C'), hold: Some('+'), alt: None},
+            (5, 7) => ScanCode{key: Some('r'), shift: Some('R'), hold: Some('('), alt: None},
+            (5, 8) => ScanCode{key: Some('l'), shift: Some('L'), hold: Some(')'), alt: None},
+            (5, 9) => ScanCode{key: Some('?'), shift: Some('?'), hold: Some('!'), alt: None},
+
+            (2, 0) => ScanCode{key: Some('a'), shift: Some('A'), hold: Some('\\'), alt: None},
+            (2, 1) => ScanCode{key: Some('o'), shift: Some('O'), hold: Some('`'), alt: None},
+            (2, 2) => ScanCode{key: Some('e'), shift: Some('E'), hold: Some('~'), alt: None},
+            (2, 3) => ScanCode{key: Some('u'), shift: Some('U'), hold: Some('|'), alt: None},
+            (2, 4) => ScanCode{key: Some('i'), shift: Some('I'), hold: Some('['), alt: None},
+            (6, 5) => ScanCode{key: Some('d'), shift: Some('D'), hold: Some(']'), alt: None},
+            (6, 6) => ScanCode{key: Some('h'), shift: Some('H'), hold: Some('<'), alt: None},
+            (6, 7) => ScanCode{key: Some('t'), shift: Some('T'), hold: Some('>'), alt: None},
+            (6, 8) => ScanCode{key: Some('n'), shift: Some('N'), hold: Some('{'), alt: None},
+            (6, 9) => ScanCode{key: Some('s'), shift: Some('S'), hold: Some('}'), alt: None},
+
+            (3, 0) => ScanCode{key: Some('q'), shift: Some('Q'), hold: Some('_'), alt: None},
+            (3, 1) => ScanCode{key: Some('j'), shift: Some('J'), hold: Some('$'), alt: None},
+            (3, 2) => ScanCode{key: Some('k'), shift: Some('K'), hold: Some('"'), alt: None},
+            (3, 3) => ScanCode{key: Some('x'), shift: Some('X'), hold: Some(':'), alt: None},
+            (3, 4) => ScanCode{key: Some('b'), shift: Some('B'), hold: Some(';'), alt: None},
+            (7, 5) => ScanCode{key: Some('m'), shift: Some('M'), hold: Some('/'), alt: None},
+            (7, 6) => ScanCode{key: Some('w'), shift: Some('W'), hold: Some('^'), alt: None},
+            (7, 7) => ScanCode{key: Some('v'), shift: Some('V'), hold: Some('='), alt: None},
+            (7, 8) => ScanCode{key: Some('z'), shift: Some('Z'), hold: Some('%'), alt: None},
+            (7, 9) => ScanCode{key: Some(0xd_u8.into()), shift: Some(0xd_u8.into()), hold: Some(0xd_u8.into()), alt: Some(0xd_u8.into())}, // carriage return
+
+            (8, 5) => ScanCode{key: Some(0xf_u8.into()), shift: Some(0xf_u8.into()), hold: Some(0xf_u8.into()), alt: Some(0xf_u8.into())}, // shift in (blue shift)
+            (8, 6) => ScanCode{key: Some(','), shift: Some(0xe_u8.into()), hold: Some(0xe_u8.into()), alt: None},  // 0xe is shift out (sym)
+            (8, 7) => ScanCode{key: Some(' '), shift: Some(' '), hold: Some(' '), alt: None},
+            (8, 8) => ScanCode{key: Some('.'), shift: Some('😃'), hold: Some('😃'), alt: None},
+            (8, 9) => ScanCode{key: Some(0xf_u8.into()), shift: Some(0xf_u8.into()), hold: Some(0xf_u8.into()), alt: Some(0xf_u8.into())}, // shift in (blue shift)
+
+            // these are all bugged: row values are swapped on PCB
+            (5, 0) => ScanCode{key: Some(0x11_u8.into()), shift: Some(0x11_u8.into()), hold: Some(0x11_u8.into()), alt: Some(0x11_u8.into())}, // DC1 (F1)
+            (5, 1) => ScanCode{key: Some(0x12_u8.into()), shift: Some(0x12_u8.into()), hold: Some(0x12_u8.into()), alt: Some(0x12_u8.into())}, // DC2 (F2)
+            (1, 8) => ScanCode{key: Some(0x13_u8.into()), shift: Some(0x13_u8.into()), hold: Some(0x13_u8.into()), alt: Some(0x13_u8.into())}, // DC3 (F3)
+            (1, 9) => ScanCode{key: Some(0x14_u8.into()), shift: Some(0x14_u8.into()), hold: Some(0x14_u8.into()), alt: Some(0x14_u8.into())}, // DC4 (F4)
+            (5, 3) => ScanCode{key: Some('←'), shift: Some('←'), hold: Some('←'), alt: Some('←')},
+            (1, 6) => ScanCode{key: Some('→'), shift: Some('→'), hold: Some('→'), alt: Some('→')},
+            (6, 4) => ScanCode{key: Some('↑'), shift: Some('↑'), hold: Some('↑'), alt: Some('↑')},
+            // this one is OK
+            (5, 2) => ScanCode{key: Some('∴'), shift: Some('∴'), hold: Some('∴'), alt: Some('∴')},
 
             _ => ScanCode {key: None, shift: None, hold: None, alt: None}
         }
     }
-}
