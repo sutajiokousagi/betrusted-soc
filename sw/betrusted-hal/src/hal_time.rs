@@ -5,8 +5,7 @@ pub fn time_init(p: &betrusted_pac::Peripherals) {
 }
 
 // time APIs needed (ideally)
-// get current time - in milliseconds, as u32
-// delay for milliseconds
+/// get current time - in milliseconds, as u32
 pub fn get_time_ms(p: &betrusted_pac::Peripherals) -> u32 {
     let mut time: u32;
     
@@ -18,6 +17,7 @@ pub fn get_time_ms(p: &betrusted_pac::Peripherals) -> u32 {
     time / TICKS_PER_MS
 }
 
+/// delay for milliseconds
 pub fn delay_ms(p: &betrusted_pac::Peripherals, ms: u32) {
     let starttime: u32 = get_time_ms(p);
 

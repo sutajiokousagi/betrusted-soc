@@ -13,7 +13,7 @@ pub fn i2c_init(p: &betrusted_pac::Peripherals, clock_mhz: u32) {
 
 // [FIXME] this is a stupid polled implementation of I2C transmission. Once we have
 // threads and interurpts, this should be refactored to be asynchronous
-#[doc = "Wait until a transaction in progress ends. [FIXME] would be good to yield here once threading is enabled."]
+/// Wait until a transaction in progress ends. [FIXME] would be good to yield here once threading is enabled.
 fn i2c_tip_wait(p: &betrusted_pac::Peripherals, timeout_ms: u32) -> u32 {
     let starttime: u32 = get_time_ms(p);
 
@@ -43,7 +43,7 @@ fn i2c_tip_wait(p: &betrusted_pac::Peripherals, timeout_ms: u32) -> u32 {
     0
 }
 
-#[doc = "The primary I2C interface call. This version currently blocks until the transaction is done."]
+/// The primary I2C interface call. This version currently blocks until the transaction is done.
 pub fn i2c_master(p: &betrusted_pac::Peripherals, addr: u8, txbuf: Option<&[u8]>, rxbuf: Option<&mut [u8]>, timeout_ms: u32) -> u32 {
     let mut ret: u32 = 0;
 
