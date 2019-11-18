@@ -47,7 +47,14 @@ class Debounce(Module):
 class KeyScan(Module, AutoCSR, AutoDoc):
     def __init__(self, pads):
         rows_unsync = pads.row
-        cols = pads.col
+        cols = Signal(pads.col.nbits)
+
+        for c in range(0, cols.nbits):
+            cols_ts = TSTriple(1)
+            self.specials += cols_ts.get_tristate(pads.col[c])
+            self.comb += cols_ts.oe.eq(cols[c])
+            self.comb += cols_ts.o.eq(1)
+
         # row and col are n-bit signals that correspond to the row and columns of the keyboard matrix
         # each row will generate a column register with the column result in it
         rows = Signal(rows_unsync.nbits)
@@ -91,7 +98,7 @@ class KeyScan(Module, AutoCSR, AutoDoc):
             setattr(self, "row_scan" + str(r), row_scan)
             setattr(self, "rowshadow" + str(r), rowshadow)
 
-
+        pending_key = Signal()
         self.sync.kbd += [
             If(colcount == (settling*cols.nbits+2),
                colcount.eq(0),
@@ -105,7 +112,7 @@ class KeyScan(Module, AutoCSR, AutoDoc):
                 scan_done.eq(0),
             ),
             If(colcount == (settling*cols.nbits+1),
-               update_shadow.eq(1),
+               update_shadow.eq(~pending_key),  # only update the shadow if the pending bit has been cleared (e.g., CPU has acknowledged it has fetched the current key state)
             ).Else(
                update_shadow.eq(0),
             ),
@@ -162,3 +169,5 @@ class KeyScan(Module, AutoCSR, AutoDoc):
                 self.rowchange.status.eq(self.rowchange.status)
             )
         ]
+
+        self.specials += MultiReg(self.ev.keypressed.pending, pending_key, "kbd")

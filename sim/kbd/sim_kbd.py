@@ -173,7 +173,7 @@ top dut (
 );
 
 // simulate a key that's pressed
-assign row = {4'b0, col[2], 3'b0};
+assign row = {4'b0, col[2] | col[4], 3'b0};
 
 endmodule""")
     f.close()
