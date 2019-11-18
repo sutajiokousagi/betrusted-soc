@@ -92,6 +92,24 @@ impl BtDisplay {
         }
         Ok(())
     }
+
+    /// Blocking flush for emergency system messages and so forth
+    pub fn blocking_flush(&mut self) {
+        while lcd_busy(&self.interface) {}  // wait until the last flush is done
+
+        for words in 0..FB_SIZE {
+            unsafe {
+                (*LCD_FB)[words] = self.fb[words];
+            }
+        }
+        lcd_update_all(&self.interface);
+        // clear dirty bits in case there's more to come
+        for lines in 0..FB_LINES {
+            self.fb[lines * FB_WIDTH_WORDS + (FB_WIDTH_WORDS - 1)] &= 0x0000_FFFF;
+        }
+
+        while lcd_busy(&self.interface) {}  // wait until the last flush is done
+    }
     
     pub fn clear(&mut self) {
         let mut line_dirty: bool = false;

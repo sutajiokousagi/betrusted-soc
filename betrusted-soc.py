@@ -347,7 +347,7 @@ class BtPower(Module, AutoCSR, AutoDoc):
         self.comb += [
             pads.audio_on.eq(self.power.fields.audio),
             pads.fpga_sys_on.eq(self.power.fields.self),
-            pads.allow_up5k_n.eq(~self.power.fields.ec_snoop),
+            pads.allow_up5k_n.eq(~self.power.fields.ec_snoop), # this signal automatically enables snoop when SoC is powered down
             pads.pwr_s0.eq(self.power.fields.state[0] & ~ResetSignal()),  # ensure SRAM isolation during reset (CE & ZZ = 1 by pull-ups)
             pads.pwr_s1.eq(self.power.fields.state[1]),
             pads.noisebias_on.eq(self.power.fields.noisebias),

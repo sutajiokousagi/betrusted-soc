@@ -130,22 +130,30 @@ impl Bounce {
 }
 
 pub struct Repl {
+    /// PAC access for commands
+    p: betrusted_pac::Peripherals,
     /// current line being typed in
     input: String,
     /// last fully-formed line
     cmd: String,
     /// output response
     output: String,
+    /// power state variable
+    power: bool,
 }
 
 const PROMPT: &str = "bt> ";
 
 impl Repl {
     pub fn new() -> Self {
-        Repl {
-            input: String::from(PROMPT),
-            cmd: String::from(" "),
-            output: String::from("Awaiting input."),
+        unsafe {
+            Repl {
+                p: betrusted_pac::Peripherals::steal(),
+                input: String::from(PROMPT),
+                cmd: String::from(" "),
+                output: String::from("Awaiting input."),
+                power: true,
+            }
         }
     }
 
@@ -173,12 +181,21 @@ impl Repl {
         self.input.clone()
     }
 
+    pub fn get_powerstate(self) -> bool {
+        self.power
+    }
+
+    pub fn force_poweroff(&mut self) {
+        self.power = false;
+    }
+
     pub fn parse_cmd(&mut self) {
         if self.cmd.len() == 0 {
             return;
         } else {
             if self.cmd.trim() == "shutdown" {
-                self.output = String::from("Got shutdown command, not implemented.");
+                self.output = String::from("Shutting down system");
+                self.power = false; // the main UI loop needs to pick this up and render the display accordingly
             } else {
                 self.output = String::from(self.cmd.trim());
                 self.output.push_str(": not recognized.");
@@ -194,6 +211,9 @@ impl Repl {
 #[entry]
 fn main() -> ! {
     let p = betrusted_pac::Peripherals::take().unwrap();
+    com_txrx(&p, 0x9003 as u16);  // 0x90cc specifies power set command. bit 0 set means EC stays on; bit 1 means power SoC on
+    unsafe{ p.POWER.power.write(|w| w.self_().bit(true).state().bits(3)); }
+
     p.SRAM_EXT.read_config.write( |w| w.trigger().bit(true) );  // check SRAM config
     i2c_init(&p, CONFIG_CLOCK_FREQUENCY / 1_000_000);
     time_init(&p);
@@ -216,10 +236,10 @@ fn main() -> ! {
     let radius: u32 = 14;
     let size: Size = display.lock().size();
     let mut cur_time: u32 = get_time_ms(&p);
-    let mut stat_array: [u16; 9] = [0; 9];
+    let mut stat_array: [u16; 10] = [0; 10];
     let mut line_height: i32 = 18;
     let left_margin: i32 = 10;
-    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 12), Point::new(size.width as i32, size.height as i32)));
+    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 13), Point::new(size.width as i32, size.height as i32)));
     let mut tx_index: usize = 0;
     let mut repl: Repl = Repl::new();
 
@@ -231,6 +251,24 @@ fn main() -> ! {
     let mut u2: char = ' ';
     loop {
         display.lock().clear();
+        if repl.power == false {
+            Font12x16::render_str("Betrusted in Standby")
+            .stroke_color(Some(BinaryColor::On))
+            .translate(Point::new(50, 250))
+            .draw(&mut *display.lock());
+
+            Font12x16::render_str("Press '0' to power on")
+            .stroke_color(Some(BinaryColor::On))
+            .translate(Point::new(40, 270))
+            .draw(&mut *display.lock());
+
+            display.lock().blocking_flush();
+
+            unsafe{p.POWER.power.write(|w| w.self_().bit(false).state().bits(1));} // FIXME: figure out how to float the state bit while system is running...
+            com_txrx(&p, 0x9005 as u16);  // 0x90cc specifies power set command. bit 0 set means EC stays on; bit 2 set means fast discharge of FPGA domain
+
+            // continue; // skip the remaining loop
+        }
         let mut cur_line: i32 = 5;
 
         let uptime = format!{"Uptime {}s", (get_time_ms(&p) / 1000) as u32};
@@ -240,6 +278,13 @@ fn main() -> ! {
         .translate(Point::new(left_margin,cur_line))
         .draw(&mut *display.lock());
         cur_line += line_height;
+
+        // power state testing ONLY - force a power off in 5 seconds
+        /*
+        if get_time_ms(&p) > 5000 {
+            repl.force_poweroff();
+        }
+        */
 
         bouncy_ball.update();
         let circle = egcircle!(bouncy_ball.loc, bouncy_ball.radius, 
@@ -274,7 +319,14 @@ fn main() -> ! {
         .draw(&mut *display.lock());
 
         cur_line += line_height;
-        let dbg = format!{"avg current: {}mA", (stat_array[8] as i16)};
+        let dbg = format!{"avg current: {}mA", (stat_array[9] as i16)};
+        Font12x16::render_str(&dbg)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+
+        cur_line += line_height;
+        let dbg = format!{"sby current: {}mA", (stat_array[8] as i16)};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
