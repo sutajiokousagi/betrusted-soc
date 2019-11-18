@@ -28,6 +28,7 @@ use embedded_graphics::pixelcolor::{BinaryColor};
 use embedded_graphics::DrawTarget;
 use spin::Mutex;
 use core::ops::Deref;
+use crate::hal_time::get_time_ms;
 
 /// FIXME: figure out a way to get LCD_FB mapped to the _lcdfb symbol without crashing RLS
 const LCD_FB: *mut [u32; FB_SIZE] = 0xB000_0000 as *mut [u32; FB_SIZE];
@@ -40,11 +41,29 @@ const FB_SIZE: usize = FB_WIDTH_WORDS * FB_LINES; // 44 bytes by 536 lines
 /// See LockedBtDisplay for API docs
 pub struct BtDisplay {
         interface: betrusted_pac::Peripherals,
+        fb: [u32; FB_SIZE],
+        timestamp: u32,
 }
 
 impl BtDisplay {
     pub fn new() -> Self {
-        unsafe{ BtDisplay{ interface: betrusted_pac::Peripherals::steal(), } }
+        let mut ret: BtDisplay =
+        unsafe{ 
+            BtDisplay{ 
+                interface: betrusted_pac::Peripherals::steal(), 
+                fb: [0xFFFF_FFFF; FB_SIZE],
+                timestamp: 0,
+            } 
+        };
+        // unset the dirty bits in the local fb array copy
+        for words in 0..FB_SIZE {
+            if words % FB_WIDTH_WORDS == 10 {
+                ret.fb[words] = 0x0000_FFFF;
+            }
+        }
+        ret.timestamp = get_time_ms(&ret.interface);
+    
+        ret
     }
 
     pub fn init(&self, clk_mhz: u32) {
@@ -52,37 +71,41 @@ impl BtDisplay {
         lcd_sync_clear(&self.interface);
     }
 
-    pub fn flush(&self) -> Result<(), ()> {
-        lcd_update_dirty(&self.interface);
-        while lcd_busy(&self.interface) {} // should this be blocking??
+    pub fn flush(&mut self) -> Result<(), ()> {
+        if !lcd_busy(&self.interface) {
+            if get_time_ms(&self.interface) - self.timestamp > 25 { // limit update rate to 40Hz
+                // copy over the local framebuffer, then call an update
+                for words in 0..FB_SIZE {
+                    unsafe {
+                        (*LCD_FB)[words] = self.fb[words];
+                    }
+                }
+                lcd_update_dirty(&self.interface);
+                self.timestamp = get_time_ms(&self.interface);
 
-        // clear all the dirty bits, under the theory that it's time-wise cheaper on average
-        // to visit every line and clear the dirty bits than it is to do an update_all()
-        for lines in 0..FB_LINES {
-            unsafe{
-                (*LCD_FB)[lines * FB_WIDTH_WORDS + (FB_WIDTH_WORDS - 1)] &= 0x0000_FFFF;
+                // clear all the dirty bits, under the theory that it's time-wise cheaper on average
+                // to visit every line and clear the dirty bits than it is to do an update_all()
+                for lines in 0..FB_LINES {
+                    self.fb[lines * FB_WIDTH_WORDS + (FB_WIDTH_WORDS - 1)] &= 0x0000_FFFF;
+                }
             }
         }
         Ok(())
     }
     
-    pub fn clear(&self) {
+    pub fn clear(&mut self) {
         let mut line_dirty: bool = false;
         for words in 0..FB_SIZE {
             if words % FB_WIDTH_WORDS != 10 {
-                unsafe{ 
-                    if (*LCD_FB)[words] != 0xFFFF_FFFF {
-                        (*LCD_FB)[words] = 0xFFFF_FFFF;
-                        line_dirty = true;
-                    }
+                if self.fb[words] != 0xFFFF_FFFF {
+                    self.fb[words] = 0xFFFF_FFFF;
+                    line_dirty = true;
                 }
             } else {
-                unsafe{ 
-                    if (*LCD_FB)[words] & 0xFFFF != 0xFFFF || line_dirty {
-                        (*LCD_FB)[words] = 0x0001_FFFF;
-                    }
-                    line_dirty = false;
+                if ((self.fb[words] & 0xFFFF) != 0xFFFF) || line_dirty {
+                    self.fb[words] = 0x0001_FFFF;
                 }
+                line_dirty = false;
             }
         }
     }
@@ -125,18 +148,14 @@ impl DrawTarget<BinaryColor> for BtDisplay {
         let Pixel(coord, color) = pixel;
         match color {
             BinaryColor::Off => 
-                unsafe{ 
-                    (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] |= 
-                        1 << (coord.x % 32); },
+                self.fb[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] |= 
+                    1 << (coord.x % 32),
             BinaryColor::On =>
-                unsafe{ 
-                    (*LCD_FB)[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] &= 
-                        !(1 << (coord.x % 32)); },
+                self.fb[ (coord.x / 32 + coord.y * FB_WIDTH_WORDS as i32) as usize] &= 
+                    !(1 << (coord.x % 32)),
         }
         // set the dirty bit on the line
-        unsafe{
-            (*LCD_FB)[(coord.y * FB_WIDTH_WORDS as i32 + (FB_WIDTH_WORDS as i32 - 1)) as usize] |= 0x0001_0000;
-        }
+        self.fb[(coord.y * FB_WIDTH_WORDS as i32 + (FB_WIDTH_WORDS as i32 - 1)) as usize] |= 0x1_0000;
     }
 }
 
