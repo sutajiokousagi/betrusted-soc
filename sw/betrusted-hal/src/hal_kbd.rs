@@ -1,18 +1,21 @@
-#[allow(dead_code)]
-
 use alloc::vec::Vec;
+use crate::hal_time::get_time_ms;
 
 /// note: the code is structured to use at most 16 rows or 16 cols
 const KBD_ROWS: usize = 9;
 const KBD_COLS: usize = 10;
 
-/// Keyboard driver HAL. Very basic at the moment.
-/// 
-/// FIXME: add software debouncing once interrupts are working. At the moment, the system will
-/// probably pick up too much switch chatter.
+/// Keyboard driver HAL.
+/// Call update() with a frequency of about once every millisecond, and the subsystem will
+/// handle keyscan & debounce automatically. Will report keyup/keydown events. Calling update()
+/// more frequently than once a millisecond should have negligble performance impact, as the
+/// system will check elapsed time, and if keys have changed before doing an expensive all-matrix 
+/// scan operation.
+
 
 /// returns the rows that have changed
-/// the result is a vector where each bit corresponds to one row
+/// the result is a vector where each bit corresponds to one row. Useful for debugging.
+#[allow(dead_code)]
 fn kbd_rowchange(p: &betrusted_pac::Peripherals) -> u16 {
     (p.KEYBOARD.rowchange0.read().bits() as u16) | ((p.KEYBOARD.rowchange1.read().bits() as u16) << 8)
 }
@@ -76,8 +79,12 @@ pub struct KeyManager {
     p: betrusted_pac::Peripherals,
     /// debounce counter array
     debounce: [[u8; KBD_COLS]; KBD_ROWS],
-    /// threshold for considering an up or down event to be debounced, in loop interations
+    /// threshold (in ms) for considering an up or down event to be debounced, in loop interations.
     threshold: u8,
+    /// last timestamp (in ms) since last call
+    timestamp: u32,
+    /// remember the last keycode since a change event
+    lastcode: Option<Vec<(usize, usize)>>,
 }
 
 impl KeyManager {
@@ -86,76 +93,115 @@ impl KeyManager {
             KeyManager{
                 p: betrusted_pac::Peripherals::steal(),
                 debounce: [[0; KBD_COLS]; KBD_ROWS],
-                threshold: 2,
+                threshold: 5,
+                timestamp: get_time_ms(&betrusted_pac::Peripherals::steal()),
+                lastcode: None,
             }
         }
     }
 
-    //// returns the current set of codes from the keyboard matrix
+    /// returns the current set of codes from the keyboard matrix
+    /// note that the hardware returns a signal that indicates if any keys have changed 
+    /// so when using getcodes() as part of a debounce loop it's recommended to check
+    /// the change signal and short-circuit the call if no keys have changed since the
+    /// last check. This check is not hard-coded into this call because there are instances
+    /// where you want to know the current status of the keys whether or not something
+    /// has changed.
     pub fn getcodes(&self) -> Option<Vec<(usize, usize)>> {
         kbd_getcodes(&self.p)
     }
-    
+
     /// update() is designed to be called at regular intervals (not based on keyboard interrupt)
-    /// by feeding the results of getcodes() to update the debounce matrix. Because this does 
-    /// debounce it needs to be aware of static key config info, whereas the keyboard interrupt only
-    /// tells you if something has changed in the keyboard state.
-    /// 
-    /// A potential optimization would be for update to keep a copy of the last codes returned
-    /// by the getcodes() function, which would allow this to go back to an interrupt-driven update.
+    /// it will automatically fetch new keycodes if a change event has happened, otherwise
+    /// the regular calls to update() are necessary to update the debouncer state
     /// 
     /// returns a tuple of (keydown, keyup) scan codes, each of which are an Option-wrapped vector
-    pub fn update(&mut self, codes: Option<Vec<(usize,usize)>>) -> (Option<Vec<(usize, usize)>>, Option<Vec<(usize,usize)>>) {
+    pub fn update(&mut self) -> (Option<Vec<(usize, usize)>>, Option<Vec<(usize,usize)>>) {
         let mut downs: [[bool; KBD_COLS]; KBD_ROWS] = [[false; KBD_COLS]; KBD_ROWS];
         let mut keydowns = Vec::new();
         let mut keyups = Vec::new();
 
-        match codes {
-            Some(code) => {
+        if self.p.KEYBOARD.ev_pending.read().bits() != 0 {
+            // only do the expensive getcodes() call if we saw a change to key state
+            self.lastcode = kbd_getcodes(&self.p);
+            // clear the pending bit
+            unsafe{ self.p.KEYBOARD.ev_pending.write(|w| w.bits(1)); }
+        }
+
+        let elapsed: u32 = get_time_ms(&self.p) - self.timestamp;
+        if (elapsed == 0) && self.lastcode.is_none() {
+            // skip debounce processing if time elapsed is too short and there's no key updates
+            (None, None)
+        } else {
+            self.timestamp = get_time_ms(&self.p); // on a "real" pass, update the timestamp accordingly
+
+            // in case a lot of time has elapsed, saturate the debounce increment at the threshold so we don't
+            // overflow the debounce counter's u8
+            let increment: u8;
+            if elapsed > self.threshold as u32 {
+                increment = self.threshold;
+            } else {
+                increment = elapsed as u8;
+            }
+
+            // if there's keys pressed, continue to increment the debounce counter
+            if self.lastcode.is_some() {
+                // this is a little tricky because alloc::Vec doesn't implement a copy operator
+                // so we have to take the vector and create a new copy after unwrapping it.betrusted_pac
+
+                let code: Vec<(usize, usize)> = self.lastcode.take().unwrap();
+                let mut newcode = Vec::new(); // need to allocate a newcode because alloc::Vec doesn't implement copy
                 for key in code {
                     let (row, col) = key;
                     if self.debounce[row][col] < self.threshold {
-                        self.debounce[row][col] += 1;
+                        self.debounce[row][col] += increment;
                         downs[row][col] = true;  // record that we did a keydown event
                         // now check if we've passed the debounce threshold, and report a keydown                        
                         if self.debounce[row][col] == self.threshold {
                             keydowns.push((row,col));
                         }
                     }
+                    newcode.push((row,col)); // manually copy to a new vect to satisfy lifetime rules
                 }
+                self.lastcode = Some(newcode);
             }
-            None => {
-                // do nothing
-            }
-        }
-        
-        for (r, cols) in self.debounce.iter_mut().enumerate() {
-            for (c, element) in cols.iter_mut().enumerate() {
-                // skip elements that recorded a key being pressed above
-                if !downs[r][c] && (*element > 0) {
-                    *element -= 1;
-                    // if we get to 0, then we conclude the key has been released
-                    if *element == 0 {
-                        keyups.push((r, c));
+            
+            // now decrement debounce couter for all elements that don't have a press
+            for (r, cols) in self.debounce.iter_mut().enumerate() {
+                for (c, element) in cols.iter_mut().enumerate() {
+                    // skip elements that recorded a key being pressed above
+                    if !downs[r][c] && (*element > 0) {
+                        // saturate-decrement the element based on time elapsed since last update
+                        if *element >= increment {
+                            *element -= increment;
+                        } else {
+                            *element = 0;
+                        }
+
+                        // if we get to 0, then we conclude the key has been released
+                        if *element == 0 {
+                            keyups.push((r, c));
+                        }
                     }
                 }
             }
-        }
 
-        let retdowns: Option<Vec<(usize, usize)>>;
-        if keydowns.len() > 0 {
-            retdowns = Some(keydowns);
-        } else {
-            retdowns = None;
-        }
-        let retups: Option<Vec<(usize, usize)>>;
-        if keyups.len() > 0 {
-            retups = Some(keyups);
-        } else {
-            retups = None;
-        }
+            // formulate the keyup/keydown return values
+            let retdowns: Option<Vec<(usize, usize)>>;
+            if keydowns.len() > 0 {
+                retdowns = Some(keydowns);
+            } else {
+                retdowns = None;
+            }
+            let retups: Option<Vec<(usize, usize)>>;
+            if keyups.len() > 0 {
+                retups = Some(keyups);
+            } else {
+                retups = None;
+            }
 
-        (retdowns, retups)
+            (retdowns, retups)
+        }
     }
 }
 

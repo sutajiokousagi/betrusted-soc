@@ -210,8 +210,7 @@ fn main() -> ! {
         .draw(&mut *display.lock());
         cur_line += line_height;
 
-        let (keydown, _keyup) = keyboard.update(keyboard.getcodes());
-
+        let (keydown, _keyup) = keyboard.update();
         if keydown.is_some() { 
             let mut keyvect = keydown.unwrap();
             num = keyvect.len();
