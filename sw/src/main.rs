@@ -279,13 +279,6 @@ fn main() -> ! {
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
         .draw(&mut *display.lock());
-
-        cur_line += line_height;
-        let dbg = format!{"row2: {:x}", kbd_getrow(&p, 2) };
-        Font12x16::render_str(&dbg)
-        .stroke_color(Some(BinaryColor::On))
-        .translate(Point::new(left_margin, cur_line))
-        .draw(&mut *display.lock());
         
         display.lock().flush().unwrap();
     }

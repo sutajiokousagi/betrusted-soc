@@ -23,7 +23,7 @@ fn kbd_rowchange(p: &betrusted_pac::Peripherals) -> u16 {
 /// get the column activation contents of the given row
 /// row is coded as a binary number, so the result of kbd_rowchange has to be decoded from a binary
 /// vector of rows to a set of numbers prior to using this function
-pub fn kbd_getrow(p: &betrusted_pac::Peripherals, row: u8) -> u16 {
+fn kbd_getrow(p: &betrusted_pac::Peripherals, row: u8) -> u16 {
     match row {
         0 => (p.KEYBOARD.row0dat0.read().bits() as u16) | ((p.KEYBOARD.row0dat1.read().bits() as u16) << 8),
         1 => (p.KEYBOARD.row1dat0.read().bits() as u16) | ((p.KEYBOARD.row1dat1.read().bits() as u16) << 8),
