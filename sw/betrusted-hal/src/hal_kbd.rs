@@ -75,7 +75,7 @@ pub struct KeyManager {
     /// the peripheral access crate pointer
     p: betrusted_pac::Peripherals,
     /// debounce counter array
-    debounce: [[u8; KBD_ROWS]; KBD_COLS],
+    debounce: [[u8; KBD_COLS]; KBD_ROWS],
     /// threshold for considering an up or down event to be debounced, in loop interations
     threshold: u8,
 }
@@ -85,7 +85,7 @@ impl KeyManager {
         unsafe{ 
             KeyManager{
                 p: betrusted_pac::Peripherals::steal(),
-                debounce: [[0; KBD_ROWS]; KBD_COLS],
+                debounce: [[0; KBD_COLS]; KBD_ROWS],
                 threshold: 5,
             }
         }
@@ -99,7 +99,7 @@ impl KeyManager {
     //// periodically call this with the results of getcodes() to update the debounce matrix
     /// returns a tuple of (keydown, keyup) scan codes, each of which are an Option-wrapped vector
     pub fn update(&mut self, codes: Option<Vec<(usize,usize)>>) -> (Option<Vec<(usize, usize)>>, Option<Vec<(usize,usize)>>) {
-        let mut downs: [[u8; KBD_ROWS]; KBD_COLS] = [[0; KBD_ROWS]; KBD_COLS];
+        let mut downs: [[bool; KBD_COLS]; KBD_ROWS] = [[false; KBD_COLS]; KBD_ROWS];
         let mut keydowns = Vec::new();
         let mut keyups = Vec::new();
 
@@ -109,7 +109,7 @@ impl KeyManager {
                     let (row, col) = key;
                     if self.debounce[row][col] < self.threshold {
                         self.debounce[row][col] += 1;
-                        downs[row][col] = 1;  // record that we did a keydown event
+                        downs[row][col] = true;  // record that we did a keydown event
                         // now check if we've passed the debounce threshold, and report a keydown                        
                         if self.debounce[row][col] == self.threshold {
                             keydowns.push((row,col));
@@ -121,15 +121,15 @@ impl KeyManager {
                 // do nothing
             }
         }
-
-        for row in 0..KBD_ROWS {
-            for col in 0..KBD_COLS {
+        
+        for (r, cols) in self.debounce.iter_mut().enumerate() {
+            for (c, element) in cols.iter_mut().enumerate() {
                 // skip elements that recorded a key being pressed above
-                if (downs[row][col] == 0) && (self.debounce[row][col] > 0) {
-                    self.debounce[row][col] -= 1;
+                if !downs[r][c] && (*element > 0) {
+                    *element -= 1;
                     // if we get to 0, then we conclude the key has been released
-                    if self.debounce[row][col] == 0 {
-                        keyups.push((row, col));
+                    if *element == 0 {
+                        keyups.push((r, c));
                     }
                 }
             }
