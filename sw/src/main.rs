@@ -62,9 +62,12 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::egcircle;
 use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::fonts::Font12x16;
+use embedded_graphics::fonts::Font8x16;
 use embedded_graphics::geometry::Point;
 use embedded_graphics::primitives::Rectangle;
+use embedded_graphics::primitives::Line;
 use alloc::vec::Vec;
+use alloc::string::String;
 
 pub struct Bounce {
     vector: Point,
@@ -126,6 +129,68 @@ impl Bounce {
     }
 }
 
+pub struct Repl {
+    /// current line being typed in
+    input: String,
+    /// last fully-formed line
+    cmd: String,
+    /// output response
+    output: String,
+}
+
+const PROMPT: &str = "bt> ";
+
+impl Repl {
+    pub fn new() -> Self {
+        Repl {
+            input: String::from(PROMPT),
+            cmd: String::from(" "),
+            output: String::from("Awaiting input."),
+        }
+    }
+
+    pub fn input_char(&mut self, c: char) {
+        if c.is_ascii() && !c.is_control() {
+            self.input.push(c);
+        } else if c == 0x8_u8.into() { // backspace
+            if self.input.len() > PROMPT.len() {
+                self.input.pop();
+            }
+        } else if c == 0xd_u8.into() { // carriage return
+            self.cmd = self.input.clone();
+            self.cmd.drain(..PROMPT.len());
+            self.input = String::from(PROMPT);
+
+            self.parse_cmd(); // now try parsing the command
+        }
+    }
+
+    pub fn get_cmd(&self) -> String {
+        self.cmd.clone()
+    }
+
+    pub fn get_input(&self) -> String {
+        self.input.clone()
+    }
+
+    pub fn parse_cmd(&mut self) {
+        if self.cmd.len() == 0 {
+            return;
+        } else {
+            if self.cmd.trim() == "shutdown" {
+                self.output = String::from("Got shutdown command, not implemented.");
+            } else {
+                self.output = String::from(self.cmd.trim());
+                self.output.push_str(": not recognized.");
+            }
+        }
+    }
+
+    pub fn get_output(&self )-> String {
+        self.output.clone()
+    }
+}
+
 #[entry]
 fn main() -> ! {
     let p = betrusted_pac::Peripherals::take().unwrap();
@@ -152,10 +217,11 @@ fn main() -> ! {
     let size: Size = display.lock().size();
     let mut cur_time: u32 = get_time_ms(&p);
     let mut stat_array: [u16; 9] = [0; 9];
-    let line_height: i32 = 18;
+    let mut line_height: i32 = 18;
     let left_margin: i32 = 10;
-    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 11), Point::new(size.width as i32, size.height as i32)));
+    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 12), Point::new(size.width as i32, size.height as i32)));
     let mut tx_index: usize = 0;
+    let mut repl: Repl = Repl::new();
 
     let mut nd: u8 = 0;
     let mut d1: char = ' ';
@@ -168,6 +234,7 @@ fn main() -> ! {
         let mut cur_line: i32 = 5;
 
         let uptime = format!{"Uptime {}s", (get_time_ms(&p) / 1000) as u32};
+        line_height = 18;
         Font12x16::render_str(&uptime)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin,cur_line))
@@ -227,6 +294,7 @@ fn main() -> ! {
                     _ => c = scancode.key.unwrap(),
                 }
                 d1 = c;
+                repl.input_char(c);
             }
             if nd >= 2 {
                 let (r, c) = keyvect.pop().unwrap();
@@ -280,6 +348,38 @@ fn main() -> ! {
         .translate(Point::new(left_margin, cur_line))
         .draw(&mut *display.lock());
         
+        // draw a demarcation line
+        cur_line += line_height + 2;
+        Line::<BinaryColor>::new(Point::new(left_margin, cur_line), 
+        Point::new(size.width as i32 - left_margin, cur_line))
+        .stroke_color(Some(BinaryColor::On))
+        .draw(&mut *display.lock());
+
+        cur_line += 4;
+        line_height = 15; // shorter line, smaller font
+        let out = repl.get_output();
+        Font8x16::render_str(&out)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+
+        cur_line += line_height;
+        let cmd = repl.get_cmd();
+        Font8x16::render_str(&cmd)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+
+        cur_line += line_height;
+        let mut input = repl.get_input();
+        if (get_time_ms(&p) / 500) % 2 == 0 {
+            input.push('_'); // add an insertion carat
+        }
+        Font8x16::render_str(&input)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+
         display.lock().flush().unwrap();
     }
 }
