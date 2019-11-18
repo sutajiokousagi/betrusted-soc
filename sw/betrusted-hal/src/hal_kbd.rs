@@ -86,7 +86,7 @@ impl KeyManager {
             KeyManager{
                 p: betrusted_pac::Peripherals::steal(),
                 debounce: [[0; KBD_COLS]; KBD_ROWS],
-                threshold: 5,
+                threshold: 2,
             }
         }
     }
@@ -96,7 +96,14 @@ impl KeyManager {
         kbd_getcodes(&self.p)
     }
     
-    //// periodically call this with the results of getcodes() to update the debounce matrix
+    /// update() is designed to be called at regular intervals (not based on keyboard interrupt)
+    /// by feeding the results of getcodes() to update the debounce matrix. Because this does 
+    /// debounce it needs to be aware of static key config info, whereas the keyboard interrupt only
+    /// tells you if something has changed in the keyboard state.
+    /// 
+    /// A potential optimization would be for update to keep a copy of the last codes returned
+    /// by the getcodes() function, which would allow this to go back to an interrupt-driven update.
+    /// 
     /// returns a tuple of (keydown, keyup) scan codes, each of which are an Option-wrapped vector
     pub fn update(&mut self, codes: Option<Vec<(usize,usize)>>) -> (Option<Vec<(usize, usize)>>, Option<Vec<(usize,usize)>>) {
         let mut downs: [[bool; KBD_COLS]; KBD_ROWS] = [[false; KBD_COLS]; KBD_ROWS];

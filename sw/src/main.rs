@@ -34,12 +34,16 @@ const CONFIG_CLOCK_FREQUENCY: u32 = 100_000_000;
 static mut DBGSTR: [u32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
 
 #[panic_handler]
-fn panic(panic_info: &PanicInfo<'_>) -> ! {
+fn panic(_panic_info: &PanicInfo<'_>) -> ! {
+    // if I include this code, the system hangs.
+    /*
     let dbg = panic_info.payload().downcast_ref::<&str>();
     match dbg {
         None => unsafe{ DBGSTR[0] = 0xDEADBEEF; }
-        _ => unsafe{ DBGSTR[0] = dbg.unwrap().as_ptr() as u32; }
+        _ => unsafe{ DBGSTR[0] = 0xFEEDFACE; }
+        _ => unsafe{ DBGSTR[0] = dbg.unwrap().as_ptr() as u32; }  // this causes crashes????
     }
+    */
     loop {}
 }
 
@@ -206,21 +210,17 @@ fn main() -> ! {
         .draw(&mut *display.lock());
         cur_line += line_height;
 
-        if p.KEYBOARD.ev_pending.read().bits() != 0 {
-            //let (keydown, _keyup) = keyboard.update(keyboard.getcodes());
-            let keydown = keyboard.getcodes();
+        let (keydown, _keyup) = keyboard.update(keyboard.getcodes());
 
-            if keydown.is_some() { 
-                let mut keyvect = keydown.unwrap();
-                num = keyvect.len();
-                // for now we just grab the very first element, if we have multi-key we ignore it
-                let (r, c) = keyvect.pop().unwrap();
-                row = r;
-                col = c;
-            }
-            // clear the pending bit
-            unsafe{ p.KEYBOARD.ev_pending.write(|w| w.bits(1)); }
+        if keydown.is_some() { 
+            let mut keyvect = keydown.unwrap();
+            num = keyvect.len();
+            // for now we just grab the very first element, if we have multi-key we ignore it
+            let (r, c) = keyvect.pop().unwrap();
+            row = r;
+            col = c;
         }
+        
         let scancode = map_dvorak((row, col));
         let c: char;
         match scancode.key {
