@@ -154,11 +154,15 @@ fn main() -> ! {
     let mut stat_array: [u16; 9] = [0; 9];
     let line_height: i32 = 18;
     let left_margin: i32 = 10;
-    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 9), Point::new(size.width as i32, size.height as i32)));
+    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 11), Point::new(size.width as i32, size.height as i32)));
     let mut tx_index: usize = 0;
-    let mut row: usize = 0;
-    let mut col: usize = 0;
-    let mut num: usize = 0;
+
+    let mut nd: u8 = 0;
+    let mut d1: char = ' ';
+    let mut d2: char = ' ';
+    let mut nu: u8 = 0;
+    let mut u1: char = ' ';
+    let mut u2: char = ' ';
     loop {
         display.lock().clear();
         let mut cur_line: i32 = 5;
@@ -201,38 +205,88 @@ fn main() -> ! {
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
         .draw(&mut *display.lock());
-        cur_line += line_height;
 
+        cur_line += line_height;
         let dbg = format!{"avg current: {}mA", (stat_array[8] as i16)};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
         .draw(&mut *display.lock());
-        cur_line += line_height;
 
-        let (keydown, _keyup) = keyboard.update();
+        let (keydown, keyup) = keyboard.update();
         if keydown.is_some() { 
             let mut keyvect = keydown.unwrap();
-            num = keyvect.len();
-            // for now we just grab the very first element, if we have multi-key we ignore it
-            let (r, c) = keyvect.pop().unwrap();
-            row = r;
-            col = c;
-        }
-        
-        let scancode = map_dvorak((row, col));
-        let c: char;
-        match scancode.key {
-            None => c = ' ',
-            _ => c = scancode.key.unwrap(),
+            nd = keyvect.len() as u8;
+            
+            if nd >= 1 {
+                let (r, c) = keyvect.pop().unwrap();
+                let scancode = map_dvorak((r,c));
+                let c: char;
+                match scancode.key {
+                    None => c = ' ',
+                    _ => c = scancode.key.unwrap(),
+                }
+                d1 = c;
+            }
+            if nd >= 2 {
+                let (r, c) = keyvect.pop().unwrap();
+                let scancode = map_dvorak((r,c));
+                let c: char;
+                match scancode.key {
+                    None => c = ' ',
+                    _ => c = scancode.key.unwrap(),
+                }
+                d2 = c;
+            }
         }
 
-        let dbg = format!{"row:{:x} col:{} num:{} char:{}", row, col, num, c};
+        if keyup.is_some() { 
+            let mut keyvect = keyup.unwrap();
+            nu = keyvect.len() as u8;
+            
+            if nu >= 1 {
+                let (r, c) = keyvect.pop().unwrap();
+                let scancode = map_dvorak((r,c));
+                let c: char;
+                match scancode.key {
+                    None => c = ' ',
+                    _ => c = scancode.key.unwrap(),
+                }
+                u1 = c;
+            }
+            if nu >= 2 {
+                let (r, c) = keyvect.pop().unwrap();
+                let scancode = map_dvorak((r,c));
+                let c: char;
+                match scancode.key {
+                    None => c = ' ',
+                    _ => c = scancode.key.unwrap(),
+                }
+                u2 = c;
+            }
+        }
+
+        cur_line += line_height;
+        let dbg = format!{"nd:{} d1:{} d2:{}", nd, d1, d2};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
         .draw(&mut *display.lock());
 
+        cur_line += line_height;
+        let dbg = format!{"nu:{} u1:{} u2:{}", nu, u1, u2};
+        Font12x16::render_str(&dbg)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+
+        cur_line += line_height;
+        let dbg = format!{"row2: {:x}", kbd_getrow(&p, 2) };
+        Font12x16::render_str(&dbg)
+        .stroke_color(Some(BinaryColor::On))
+        .translate(Point::new(left_margin, cur_line))
+        .draw(&mut *display.lock());
+        
         display.lock().flush().unwrap();
     }
 }

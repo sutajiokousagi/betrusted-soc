@@ -23,7 +23,7 @@ fn kbd_rowchange(p: &betrusted_pac::Peripherals) -> u16 {
 /// get the column activation contents of the given row
 /// row is coded as a binary number, so the result of kbd_rowchange has to be decoded from a binary
 /// vector of rows to a set of numbers prior to using this function
-fn kbd_getrow(p: &betrusted_pac::Peripherals, row: u8) -> u16 {
+pub fn kbd_getrow(p: &betrusted_pac::Peripherals, row: u8) -> u16 {
     match row {
         0 => (p.KEYBOARD.row0dat0.read().bits() as u16) | ((p.KEYBOARD.row0dat1.read().bits() as u16) << 8),
         1 => (p.KEYBOARD.row1dat0.read().bits() as u16) | ((p.KEYBOARD.row1dat1.read().bits() as u16) << 8),
@@ -122,7 +122,7 @@ impl KeyManager {
         let mut keyups = Vec::new();
 
         if self.p.KEYBOARD.ev_pending.read().bits() != 0 {
-            // only do the expensive getcodes() call if we saw a change to key state
+            // only do the getcodes() call if we saw a change to key state
             self.lastcode = kbd_getcodes(&self.p);
             // clear the pending bit
             unsafe{ self.p.KEYBOARD.ev_pending.write(|w| w.bits(1)); }
@@ -155,35 +155,32 @@ impl KeyManager {
                     let (row, col) = key;
                     if self.debounce[row][col] < self.threshold {
                         self.debounce[row][col] += increment;
-                        downs[row][col] = true;  // record that we did a keydown event
                         // now check if we've passed the debounce threshold, and report a keydown                        
-                        if self.debounce[row][col] == self.threshold {
+                        if self.debounce[row][col] >= self.threshold {
                             keydowns.push((row,col));
                         }
                     }
+                    downs[row][col] = true;  // record that we processed the key
                     newcode.push((row,col)); // manually copy to a new vect to satisfy lifetime rules
                 }
                 self.lastcode = Some(newcode);
             }
             
             // now decrement debounce couter for all elements that don't have a press
-            for (r, cols) in self.debounce.iter_mut().enumerate() {
-                for (c, element) in cols.iter_mut().enumerate() {
-                    // skip elements that recorded a key being pressed above
-                    if !downs[r][c] && (*element > 0) {
-                        // saturate-decrement the element based on time elapsed since last update
-                        if *element >= increment {
-                            *element -= increment;
+            for r in 0..KBD_ROWS {
+                for c in 0..KBD_COLS {
+                    if !downs[r][c] && (self.debounce[r][c] > 0) {
+                        if self.debounce[r][c] >= increment {
+                            self.debounce[r][c] -= increment;
                         } else {
-                            *element = 0;
+                            self.debounce[r][c] = 0;
                         }
 
-                        // if we get to 0, then we conclude the key has been released
-                        if *element == 0 {
+                        if self.debounce[r][c] == 0 {
                             keyups.push((r, c));
                         }
                     }
-                }
+               }
             }
 
             // formulate the keyup/keydown return values
