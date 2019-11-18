@@ -34,13 +34,18 @@ const CONFIG_CLOCK_FREQUENCY: u32 = 100_000_000;
 static mut DBGSTR: [u32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
 
 #[panic_handler]
-fn panic(_panic: &PanicInfo<'_>) -> ! {
+fn panic(panic_info: &PanicInfo<'_>) -> ! {
+    let dbg = panic_info.payload().downcast_ref::<&str>();
+    match dbg {
+        None => unsafe{ DBGSTR[0] = 0xDEADBEEF; }
+        _ => unsafe{ DBGSTR[0] = dbg.unwrap().as_ptr() as u32; }
+    }
     loop {}
 }
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
-    unsafe{ DBGSTR[3] = layout.size() as u32; }
+    unsafe{ DBGSTR[0] = layout.size() as u32; }
     panic!()
 }
 
