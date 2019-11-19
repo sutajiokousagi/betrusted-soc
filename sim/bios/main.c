@@ -43,6 +43,10 @@
 #include "boot.h"
 
 /* General address space functions */
+void lcd_clear(void);
+void lcd_animate(void);
+extern void boot_helper(unsigned long r1, unsigned long r2, unsigned long r3, unsigned long addr);
+extern void __attribute__((noreturn)) boot(unsigned long r1, unsigned long r2, unsigned long r3, unsigned long addr);
 
 #define NUMBER_OF_BYTES_ON_A_LINE 16
 static void dump_bytes(unsigned int *ptr, int count, unsigned long addr)
@@ -753,6 +757,12 @@ static void do_command(char *c)
 #endif
 	else if(strcmp(token, "smemtest") == 0) smemtest(get_token(&c));
 
+	else if(strcmp(token, "lcdclear") == 0) lcd_clear();
+	else if(strcmp(token, "lcdanimate") == 0) lcd_animate();
+	else if(strcmp(token, "testboot") == 0) boot_helper(0, 0, 0, 0x20000000);
+	//	else if(strcmp(token, "testboot2") == 0) boot(0, 0, 0, strtoul(get_token(&c), NULL, 0));
+
+
 	else if(strcmp(token, "") != 0)
 		printf("Command not found\n");
 }
@@ -845,6 +855,65 @@ static void boot_sequence(void)
 	}
 }
 
+void lcd_clear(void) {
+#ifndef SIMULATION
+  
+  int row, col;
+  volatile unsigned int *lcd = (volatile unsigned int *)MEMLCD_BASE;
+
+  memlcd_prescaler_write(49);
+  for( row = 0; row < 536; row++ ) {
+    for( col = 0; col < 11; col++ ) {
+      lcd[ row * 11 + col ] = 0xffffffff;
+    }
+  }
+  memlcd_command_write(1 << CSR_MEMLCD_COMMAND_UPDATEDIRTY_OFFSET);
+  col++;
+  while(memlcd_Busy_read())
+    ;
+
+  // clear all the dirty bits
+  for( row = 0; row < 536; row++ ) {
+      lcd[ row * 11 + 10 ] = 0xffff;
+  }
+  printf( "cleared: %d\n", col );
+#endif  
+}
+
+void lcd_animate(void) {
+#ifndef SIMULATION
+  int row, col, offset;
+  volatile unsigned int *lcd = (volatile unsigned int *)MEMLCD_BASE;
+
+  offset = 0;
+  while(1) {
+    for( row = 100; row < 400; row++ ) {
+      for( col = 0; col < 11; col++ ) {
+	switch (offset % 4) {
+	  case 0:
+	    lcd[ row * 11 + col ] = 0xc003c003;
+	    break;
+	  case 1:
+	    lcd[ row * 11 + col ] = 0x3c003c00;
+	    break;
+	  case 2:
+	    lcd[ row * 11 + col ] = 0x03c003c0;
+	    break;
+	  case 3:
+	    lcd[ row * 11 + col ] = 0x003c003c;
+	    break;
+	}
+      }
+    }
+    memlcd_command_write(1 << CSR_MEMLCD_COMMAND_UPDATEDIRTY_OFFSET);
+    offset ++;
+    while(memlcd_Busy_read())
+      ;
+    printf("%d", offset);
+  }
+#endif
+}
+
 int main(int i, char **c)
 {
 	char buffer[64];
@@ -870,7 +939,109 @@ int main(int i, char **c)
 	mem_c[0x22] = mem_c[0x1d4] + mem_c[0x1e5] + 0x33;
 	mem_c[0x33] = mem_c[0x1f6] + mem_c[0x207] + 0xcc;
 #endif
+#if LCD_SIMULATION
+	volatile unsigned int *lcd = (volatile unsigned int *)MEMLCD_BASE;
+
+	lcd_clear();
+	lcd_animate();
+
+	memlcd_prescaler_write(49); // set to 2MHz clock (top speed allowed)
+	lcd[535*11 + 10] = 0x10001;  // set a dirty bit on the last line
+	lcd[535*11] = 0x1111face; // put data at the beginning of the last line
+
+	lcd[10] = 0x07006006;
+	lcd[0] = 0x80000001;
+	lcd[1] = 0x40000002;
+	memlcd_command_write(1 << CSR_MEMLCD_COMMAND_UPDATEDIRTY_OFFSET);
+	while(memlcd_Busy_read())
+	  ;
+#endif
 #if COM_SIMULATION
+	volatile unsigned int *mem;
+	mem = (volatile unsigned int *) 0x40000000;
+	
+	spislave_control_write(1 << CSR_SPISLAVE_CONTROL_INTENA_OFFSET);
+	
+	spislave_tx_write(0x0F0F);
+	spimaster_tx_write(0xf055);
+	spimaster_control_write(1 << CSR_SPIMASTER_CONTROL_GO_OFFSET |
+				1 << CSR_SPIMASTER_CONTROL_INTENA_OFFSET);
+	// note: if spiclk > cpuclock, the below line should be commented out on all transactons
+	while( !(spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET)) )
+	  ;
+	while( spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET) )
+	  ;
+	spimaster_control_write(0);
+	mem[0] = spimaster_rx_read();
+	mem[1] = spislave_rx_read();
+	
+	spislave_tx_write(0x1234);
+	spimaster_tx_write(0x90F1);
+	spimaster_control_write(1 << CSR_SPIMASTER_CONTROL_GO_OFFSET |
+				1 << CSR_SPIMASTER_CONTROL_INTENA_OFFSET);
+	while( !(spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET)) )
+	  ;
+	while( spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET) )
+	  ;
+	spimaster_control_write(0);
+	mem[2] = spimaster_rx_read();
+	// mem[3] = spislave_rx_read();  // test overrun flag
+
+	
+	spislave_tx_write(0x89ab);
+	spimaster_tx_write(0xbabe);
+	spimaster_control_write(1 << CSR_SPIMASTER_CONTROL_GO_OFFSET |
+				1 << CSR_SPIMASTER_CONTROL_INTENA_OFFSET);
+	while( !(spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET)) )
+	  ;
+	while( spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET) )
+	  ;
+	spimaster_control_write(0);
+	mem[4] = spimaster_rx_read();
+	mem[5] = spislave_rx_read();
+
+	
+	spislave_tx_write(0xcdef);
+	spimaster_tx_write(0x3c06);
+	spimaster_control_write(1 << CSR_SPIMASTER_CONTROL_GO_OFFSET |
+				1 << CSR_SPIMASTER_CONTROL_INTENA_OFFSET);
+	while( !(spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET)) )
+	  ;
+	while( spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET) )
+	  ;
+	spimaster_control_write(0);
+	mem[6] = spimaster_rx_read();
+	mem[7] = spislave_rx_read();
+
+	spislave_control_write(1 << CSR_SPISLAVE_CONTROL_CLRERR_OFFSET);
+
+	spislave_tx_write(0xff00);
+	spimaster_tx_write(0x5a5a);
+	spimaster_control_write(1 << CSR_SPIMASTER_CONTROL_GO_OFFSET |
+				1 << CSR_SPIMASTER_CONTROL_INTENA_OFFSET);
+	while( !(spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET)) )
+	  ;
+	while( spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET) )
+	  ;
+	spimaster_control_write(0);
+	mem[8] = spimaster_rx_read();
+	mem[9] = spislave_rx_read();
+
+	// write performance benchmark
+	for(i = 0; i < 16; i++ ) {
+	  spimaster_tx_write(i + 0x4c00);
+	  spimaster_control_write(1 << CSR_SPIMASTER_CONTROL_GO_OFFSET);
+	  // simulations show the below is critical in poll loops for sysclk=100MHz, spclk=25MHz
+	  while( !(spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET)) )
+	    ;
+	  while( spimaster_status_read() & (1 << CSR_SPIMASTER_STATUS_TIP_OFFSET) )
+	    ;
+	  spimaster_control_write(0);
+	  mem[i+10] = spislave_rx_read();
+	}
+	
+#endif
+#if 0 // deprecated com simulation
 	int j;
 	for( j = 0; j < 8; j ++ ) {
 	  spimaster_control_write(1 << CSR_SPIMASTER_CONTROL_CLRDONE_OFFSET);
@@ -939,6 +1110,13 @@ int main(int i, char **c)
 
 	printf("--========= \e[1mPeripherals init\e[0m ===========--\n");
 	printf("EXT SRAM config: 0x%08x\n", sram_ext_config_status_read());
+	/*
+	lcd_clear();
+	printf("LCD cleared\n");
+
+	printf("Now animating LCD\n");
+	lcd_animate();
+	*/
 
 	sdr_ok = 1;
 #if defined(CSR_ETHMAC_BASE) || defined(CSR_SDRAM_BASE)
