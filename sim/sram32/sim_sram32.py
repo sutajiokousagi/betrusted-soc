@@ -111,6 +111,9 @@ def generate_top():
     platform = Platform()
     soc = SimpleSim(platform)
     builder = Builder(soc, output_dir="./run", csr_csv="test/csr.csv")
+    builder.software_packages = [
+        ("bios", os.path.abspath(os.path.join(os.path.dirname(__file__), "../bios")))
+    ]
     vns = builder.build(run=False)
     soc.do_exit(vns)
 #    platform.build(soc, build_dir="./run", run=False)  # run=False prevents synthesis from happening, but a top.v file gets kicked out
