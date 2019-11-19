@@ -267,7 +267,7 @@ fn main() -> ! {
             unsafe{p.POWER.power.write(|w| w.self_().bit(false).state().bits(1));} // FIXME: figure out how to float the state bit while system is running...
             com_txrx(&p, 0x9005 as u16);  // 0x90cc specifies power set command. bit 0 set means EC stays on; bit 2 set means fast discharge of FPGA domain
 
-            // continue; // skip the remaining loop
+            continue; // this creates the illusion of being powered off even if we're plugged in
         }
         let mut cur_line: i32 = 5;
 
