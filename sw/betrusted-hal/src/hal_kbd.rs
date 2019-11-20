@@ -214,7 +214,7 @@ impl KeyManager {
             (4, 6) => ScanCode{key: Some('7'), shift: Some('7'), hold: None, alt: None},
             (4, 7) => ScanCode{key: Some('8'), shift: Some('8'), hold: None, alt: None},
             (4, 8) => ScanCode{key: Some('9'), shift: Some('9'), hold: None, alt: None},
-            (4, 9) => ScanCode{key: Some('0'), shift: Some('0'), hold: None, alt: None},
+            (4, 9) => ScanCode{key: Some('0'), shift: Some('0'), hold: None, alt: None},  // also usable as power key
 
             (1, 0) => ScanCode{key: Some(0x8_u8.into()), shift: Some(0x8_u8.into()), hold: Some(0x8_u8.into()), alt: Some(0x8_u8.into())}, // backspace
             (1, 1) => ScanCode{key: Some('\''), shift: Some('\''), hold: Some('@'), alt: None},
@@ -256,12 +256,14 @@ impl KeyManager {
             (8, 9) => ScanCode{key: Some(0xf_u8.into()), shift: Some(0xf_u8.into()), hold: Some(0xf_u8.into()), alt: Some(0xf_u8.into())}, // shift in (blue shift)
 
             // these are all bugged: row values are swapped on PCB
-            (5, 0) => ScanCode{key: Some(0x11_u8.into()), shift: Some(0x11_u8.into()), hold: Some(0x11_u8.into()), alt: Some(0x11_u8.into())}, // DC1 (F1)
-            (5, 1) => ScanCode{key: Some(0x12_u8.into()), shift: Some(0x12_u8.into()), hold: Some(0x12_u8.into()), alt: Some(0x12_u8.into())}, // DC2 (F2)
-            (1, 8) => ScanCode{key: Some(0x13_u8.into()), shift: Some(0x13_u8.into()), hold: Some(0x13_u8.into()), alt: Some(0x13_u8.into())}, // DC3 (F3)
-            (1, 9) => ScanCode{key: Some(0x14_u8.into()), shift: Some(0x14_u8.into()), hold: Some(0x14_u8.into()), alt: Some(0x14_u8.into())}, // DC4 (F4)
-            (5, 3) => ScanCode{key: Some('←'), shift: Some('←'), hold: Some('←'), alt: Some('←')},
-            (1, 6) => ScanCode{key: Some('→'), shift: Some('→'), hold: Some('→'), alt: Some('→')},
+            // the F0/tab key also doubles as a secondary power key (can't do UP5K UART rx at same time)
+            (4, 0) => ScanCode{key: Some(0x11_u8.into()), shift: Some(0x11_u8.into()), hold: Some(0x11_u8.into()), alt: Some(0x11_u8.into())}, // DC1 (F1)
+            (4, 1) => ScanCode{key: Some(0x12_u8.into()), shift: Some(0x12_u8.into()), hold: Some(0x12_u8.into()), alt: Some(0x12_u8.into())}, // DC2 (F2)
+            (3, 8) => ScanCode{key: Some(0x13_u8.into()), shift: Some(0x13_u8.into()), hold: Some(0x13_u8.into()), alt: Some(0x13_u8.into())}, // DC3 (F3)
+            // the F4/ctrl key also doubles as a power key
+            (3, 9) => ScanCode{key: Some(0x14_u8.into()), shift: Some(0x14_u8.into()), hold: Some(0x14_u8.into()), alt: Some(0x14_u8.into())}, // DC4 (F4)
+            (4, 3) => ScanCode{key: Some('←'), shift: Some('←'), hold: Some('←'), alt: Some('←')},
+            (3, 6) => ScanCode{key: Some('→'), shift: Some('→'), hold: Some('→'), alt: Some('→')},
             (6, 4) => ScanCode{key: Some('↑'), shift: Some('↑'), hold: Some('↑'), alt: Some('↑')},
             (8, 2) => ScanCode{key: Some('↓'), shift: Some('↓'), hold: Some('↓'), alt: Some('↓')},
             // this one is OK
