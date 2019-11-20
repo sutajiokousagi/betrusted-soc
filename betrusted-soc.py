@@ -388,8 +388,9 @@ class BaseSoC(SoCCore):
                          integrated_sram_size=0x20000,
                          ident="betrusted.io LiteX Base SoC",
                          cpu_type="vexriscv",
+#                         cpu_variant="linux+debug",  # this core doesn't work, but left for jogging my memory later on if I need to try it
                          **kwargs)
-        self.cpu.use_external_variant("gateware/VexRiscv_HaD_Debug.v")
+        self.cpu.use_external_variant("gateware/VexRiscv_BetrustedSoC_Debug.v")
         self.cpu.add_debug()
         self.add_memory_region("rom", 0, 0) # Required to keep litex happy
         kwargs['cpu_reset_address']=self.mem_map["spiflash"]+boot_offset
