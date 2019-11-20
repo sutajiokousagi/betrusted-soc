@@ -263,6 +263,7 @@ impl KeyManager {
             (5, 3) => ScanCode{key: Some('←'), shift: Some('←'), hold: Some('←'), alt: Some('←')},
             (1, 6) => ScanCode{key: Some('→'), shift: Some('→'), hold: Some('→'), alt: Some('→')},
             (6, 4) => ScanCode{key: Some('↑'), shift: Some('↑'), hold: Some('↑'), alt: Some('↑')},
+            (8, 2) => ScanCode{key: Some('↓'), shift: Some('↓'), hold: Some('↓'), alt: Some('↓')},
             // this one is OK
             (5, 2) => ScanCode{key: Some('∴'), shift: Some('∴'), hold: Some('∴'), alt: Some('∴')},
 
