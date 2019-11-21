@@ -101,11 +101,7 @@ _io = [
     ("com_irq", 0, Pins("M16"), IOStandard("LVCMOS18")),
 
     # Top-side internal FPC header
-#    ("gpio0", 0, Pins("B18"), IOStandard("LVCMOS33")),
-#    ("gpio1", 0, Pins("D15"), IOStandard("LVCMOS33")),
-    ("gpio2", 0, Pins("A16"), IOStandard("LVCMOS33")),
-    ("gpio3", 0, Pins("B16"), IOStandard("LVCMOS33")),
-    ("gpio4", 0, Pins("D16"), IOStandard("LVCMOS33")),
+    ("gpio", 0, Pins("A16", "B16", "D16"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")), # B18 and D15 are used by the serial bridge
 
     # Keyboard scan matrix
     ("kbd", 0,
@@ -354,6 +350,47 @@ class BtPower(Module, AutoCSR, AutoDoc):
             pads.noise_on.eq(self.power.fields.noise),
         ]
 
+class BtGpio(Module, AutoDoc, AutoCSR):
+    def __init__(self, pads):
+        self.intro = ModuleDoc("""BtGpio - GPIO interface for betrusted""")
+
+        gpio_in = Signal(pads.nbits)
+        gpio_out = Signal(pads.nbits)
+        gpio_oe = Signal(pads.nbits)
+
+        for g in range(0, pads.nbits):
+            gpio_ts = TSTriple(1)
+            self.specials += gpio_ts.get_tristate(pads[g])
+            self.comb += [
+                gpio_ts.oe.eq(gpio_oe[g]),
+                gpio_ts.o.eq(gpio_out[g]),
+                gpio_in[g].eq(gpio_ts.i),
+            ]
+
+        self.output = CSRStorage(pads.nbits, description="Values to appear on GPIO when respective `drive` bit is asserted")
+        self.input = CSRStatus(pads.nbits, description="Value measured on the respective GPIO pin")
+        self.drive = CSRStorage(pads.nbits, description="When a bit is set to `1`, the respective pad drives its value out")
+        self.intena = CSRStatus(pads.nbits, description="Enable interrupts when a respective bit is set")
+        self.intpol = CSRStatus(pads.nbits, description="When a bit is `1`, falling-edges cause interrupts. Otherwise, rising edges cause interrupts.")
+
+        self.specials += MultiReg(gpio_in, self.input.status)
+        self.comb += [
+            gpio_out.eq(self.output.storage),
+            gpio_oe.eq(self.drive.storage),
+        ]
+
+        self.submodules.ev = EventManager()
+
+        for i in range(0, pads.nbits):
+            setattr(self.ev, "gpioint" + str(i), EventSourcePulse() ) # pulse => rising edge
+
+        self.ev.finalize()
+
+        for i in range(0, pads.nbits):
+            # pull from input.status because it's after the MultiReg synchronizer
+            self.comb += getattr(self.ev, "gpioint" + str(i)).trigger.eq(self.input.status[i] ^ self.intpol.status[i])
+            # note that if you change the polarity on the interrupt it could trigger an interrupt
+
 
 boot_offset = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
 bios_size = 0x8000
@@ -506,6 +543,11 @@ class BaseSoC(SoCCore):
         self.submodules.keyboard = ClockDomainsRenamer(cd_remapping={"kbd":"lpclk"})(keyboard.KeyScan(platform.request("kbd")))
         self.add_csr("keyboard")
         self.add_interrupt("keyboard")
+
+        # GPIO module
+        self.submodules.gpio = BtGpio(platform.request("gpio"))
+        self.add_csr("gpio")
+        self.add_interrupt("gpio")
 
         ## TODO: XADC, audio, wide-width/fast SPINOR, sdcard
 
