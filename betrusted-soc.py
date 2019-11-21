@@ -575,7 +575,7 @@ def main():
     vns = builder.build()
     soc.do_exit(vns)
     lxsocdoc.generate_docs(soc, "build/documentation", note_pulses=True)
-    lxsocdoc.generate_svd(soc, "build/software")
+    lxsocdoc.generate_svd(soc, "build/software", name="Betrusted SoC", description="Primary UI Core for Betrusted", filename="soc.svd", vendor="Betrusted-IO")
 
 if __name__ == "__main__":
     main()
