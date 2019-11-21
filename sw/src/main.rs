@@ -196,6 +196,13 @@ impl Repl {
             if self.cmd.trim() == "shutdown" {
                 self.output = String::from("Shutting down system");
                 self.power = false; // the main UI loop needs to pick this up and render the display accordingly
+            } else if self.cmd.trim() == "buzz" {
+                self.output = String::from("Making a buzz");
+                unsafe{ self.p.GPIO.drive.write(|w| w.bits(4)); }
+                unsafe{ self.p.GPIO.output.write(|w| w.bits(4)); }
+                let time: u32 = get_time_ms(&self.p);
+                while get_time_ms(&self.p) - time < 250 { }
+                unsafe{ self.p.GPIO.output.write(|w| w.bits(4)); }
             } else {
                 self.output = String::from(self.cmd.trim());
                 self.output.push_str(": not recognized.");
@@ -232,6 +239,12 @@ fn main() -> ! {
     display.lock().init(CONFIG_CLOCK_FREQUENCY);
 
     let mut keyboard: KeyManager = KeyManager::new();
+
+    // initialize vibe motor patch
+    unsafe{ p.GPIO.drive.write(|w| w.bits(4)); }
+    unsafe{ p.GPIO.output.write(|w| w.bits(0)); }
+    //let mut elapsed: u32 = get_time_ms(&p);
+    //let mut vibetime: u32 = 1000;
 
     let radius: u32 = 14;
     let size: Size = display.lock().size();
@@ -285,6 +298,18 @@ fn main() -> ! {
             repl.force_poweroff();
         }
         */
+        /*
+        // pulse the motor once every second
+        if get_time_ms(&p) - elapsed > vibetime {
+            if vibetime > 500 {
+                unsafe{ p.GPIO.output.write(|w| w.bits(4)); }
+                vibetime = 250;
+            } else {
+                unsafe{ p.GPIO.output.write(|w| w.bits(0)); }
+                vibetime = 1000;
+            }
+            elapsed = get_time_ms(&p);
+        }*/
 
         bouncy_ball.update();
         let circle = egcircle!(bouncy_ball.loc, bouncy_ball.radius, 

@@ -367,11 +367,11 @@ class BtGpio(Module, AutoDoc, AutoCSR):
                 gpio_in[g].eq(gpio_ts.i),
             ]
 
-        self.output = CSRStorage(pads.nbits, description="Values to appear on GPIO when respective `drive` bit is asserted")
-        self.input = CSRStatus(pads.nbits, description="Value measured on the respective GPIO pin")
-        self.drive = CSRStorage(pads.nbits, description="When a bit is set to `1`, the respective pad drives its value out")
-        self.intena = CSRStatus(pads.nbits, description="Enable interrupts when a respective bit is set")
-        self.intpol = CSRStatus(pads.nbits, description="When a bit is `1`, falling-edges cause interrupts. Otherwise, rising edges cause interrupts.")
+        self.output = CSRStorage(pads.nbits, name="output", description="Values to appear on GPIO when respective `drive` bit is asserted")
+        self.input = CSRStatus(pads.nbits, name="input", description="Value measured on the respective GPIO pin")
+        self.drive = CSRStorage(pads.nbits, name="drive", description="When a bit is set to `1`, the respective pad drives its value out")
+        self.intena = CSRStatus(pads.nbits, name="intena", description="Enable interrupts when a respective bit is set")
+        self.intpol = CSRStatus(pads.nbits, name="intpol", description="When a bit is `1`, falling-edges cause interrupts. Otherwise, rising edges cause interrupts.")
 
         self.specials += MultiReg(gpio_in, self.input.status)
         self.comb += [
