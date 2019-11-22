@@ -102,19 +102,19 @@ impl Bounce {
            (x <= (self.bounds.top_left().x + r)) ||   
            (y >= (self.bounds.bottom_right().y as i32 - r)) || 
            (y <= (self.bounds.top_left().y + r)) {
-            if x >= (self.bounds.bottom_right().x as i32 - r) {
+            if x >= (self.bounds.bottom_right().x as i32 - r - 1) {
                 self.vector.x = -self.rand[self.rand_index];
                 x = self.bounds.bottom_right().x as i32 - r;
             }
-            if x <= self.bounds.top_left().x + r {
+            if x <= self.bounds.top_left().x + r + 1 {
                 self.vector.x = self.rand[self.rand_index];
                 x = self.bounds.top_left().x + r;
             }
-            if y >= (self.bounds.bottom_right().y as i32 - r) {
+            if y >= (self.bounds.bottom_right().y as i32 - r - 1) {
                 self.vector.y = -self.rand[self.rand_index];
                 y = self.bounds.bottom_right().y as i32 - r;
             }
-            if y <= (self.bounds.top_left().y + r) {
+            if y <= (self.bounds.top_left().y + r + 1) {
                 self.vector.y = self.rand[self.rand_index];
                 y = self.bounds.top_left().y + r;
             }
