@@ -4,8 +4,6 @@
 # the build will finish without exiting due to missing third-party
 # programs.
 
-# a small change to bump the git rev
-
 LX_DEPENDENCIES = ["riscv", "vivado"]
 
 # Import lxbuildenv to integrate the deps/ directory
@@ -37,6 +35,8 @@ from gateware import ticktimer
 from migen.genlib.cdc import MultiReg
 from gateware import spinor
 from gateware import keyboard
+
+from random import SystemRandom
 
 import lxsocdoc
 
@@ -394,6 +394,20 @@ class BtGpio(Module, AutoDoc, AutoCSR):
             self.comb += getattr(self.ev, "gpioint" + str(i)).trigger.eq(self.input.status[i] ^ self.intpol.status[i])
             # note that if you change the polarity on the interrupt it could trigger an interrupt
 
+class BtSeed(Module, AutoDoc, AutoCSR):
+    def __init__(self, reproduceable=False):
+        self.intro = ModuleDoc("""Place and route seed. Set to a fixed number for reproduceable builds.
+        Use a random number or your own number if you are paranoid about hardware implants that target
+        fixed locations within the FPGA.""")
+
+        rng = SystemRandom()
+        if reproduceable:
+            self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset="4") # chosen by fair dice roll. guaranteed to be random.
+        else:
+            self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset=rng.getrandbits(64))
+
+
+
 
 boot_offset = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
 bios_size = 0x8000
@@ -551,6 +565,10 @@ class BaseSoC(SoCCore):
         self.submodules.gpio = BtGpio(platform.request("gpio"))
         self.add_csr("gpio")
         self.add_interrupt("gpio")
+
+        # Build seed
+        self.submodules.seed = BtSeed()
+        self.add_csr("seed")
 
         ## TODO: XADC, audio, wide-width/fast SPINOR, sdcard
 
