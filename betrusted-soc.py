@@ -41,19 +41,9 @@ from random import SystemRandom
 import lxsocdoc
 
 _io = [
+    # see main() for UART pins
+
     ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),
-
-    ("debug", 0,  # wired via the debug cable to the rpi
-     Subsignal("tx", Pins("V6")),
-     Subsignal("rx", Pins("V7")),
-     IOStandard("LVCMOS18"),
-     ),
-
-    ("serial", 0,
-     Subsignal("tx", Pins("B18")),  # debug0 breakout
-     Subsignal("rx", Pins("D15")),  # debug1
-     IOStandard("LVCMOS33"),
-     ),
 
     #("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")), # analog
     #("usbc_cc2", 0, Pins("E16"), IOStandard("LVCMOS33")), # analog
@@ -571,8 +561,31 @@ class BaseSoC(SoCCore):
         self.add_csr("seed")
 
         ## TODO: XADC, audio, wide-width/fast SPINOR, sdcard
+"""
+        # this is how to force a block in a given location
+        platform.toolchain.attr_translate["icap0"] = ("LOC", "ICAP_X0Y0")
+        platform.toolchain.attr_translate["KEEP"] = ("KEEP", "TRUE")
+        platform.toolchain.attr_translate["DONT_TOUCH"] = ("DONT_TOUCH", "TRUE")
+        self.specials += [
+            Instance("ICAPE2",
+                     i_I=0,
+                     i_RDWRB=1,
+                     attr={"KEEP", "DONT_TOUCH", "icap0"}
+                     )
+        ]
+        
+        # turns into the following verilog:
+(* DONT_TOUCH = "TRUE", KEEP = "TRUE", LOC = "ICAP_X0Y0" *) ICAPE2 ICAPE2(
+        .I(1'd0),
+        .RDWRB(1'd1)
+);
+        
+"""
+
 
 def main():
+    global _io
+
     if os.environ['PYTHONHASHSEED'] != "1":
         print( "PYTHONHASHEED must be set to 1 for consistent validation results. Failing to set this results in non-deterministic compilation results")
         exit()
@@ -580,6 +593,9 @@ def main():
     parser = argparse.ArgumentParser(description="Build the Betrusted SoC")
     parser.add_argument(
         "-D", "--document-only", default=False, action="store_true", help="Build docs only"
+    )
+    parser.add_argument(
+        "-u", "--uart-swap", default=False, action="store_true", help="swap UART pins (GDB debug bridge <-> console)"
     )
 
     args = parser.parse_args()
@@ -589,6 +605,35 @@ def main():
     if args.document_only:
         compile_gateware = False
         compile_software = False
+
+    if args.uart_swap:
+        _io += [
+            ("serial", 0,  # wired to the RPi
+             Subsignal("tx", Pins("V6")),
+             Subsignal("rx", Pins("V7")),
+             IOStandard("LVCMOS18"),
+             ),
+
+            ("debug", 0,   # wired to the internal flex
+             Subsignal("tx", Pins("B18")),  # debug0 breakout
+             Subsignal("rx", Pins("D15")),  # debug1
+             IOStandard("LVCMOS33"),
+             ),
+        ]
+    else:  # default to GDB bridge going to the Pi
+        _io += [
+            ("debug", 0,   # wired to the Rpi
+             Subsignal("tx", Pins("V6")),
+             Subsignal("rx", Pins("V7")),
+             IOStandard("LVCMOS18"),
+             ),
+
+            ("serial", 0,  # wired to the internal flex
+             Subsignal("tx", Pins("B18")),  # debug0 breakout
+             Subsignal("rx", Pins("D15")),  # debug1
+             IOStandard("LVCMOS33"),
+             ),
+        ]
 
     platform = Platform()
     soc = BaseSoC(platform)
