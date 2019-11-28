@@ -1,6 +1,6 @@
 #[allow(dead_code)]
 
-/// com_txrx is a polled-implementation of an atomit TX/RX swap operation
+/// com_txrx is a polled-implementation of an atomic TX/RX swap operation
 /// The code is a little awkward for several reasons:
 ///   * CSR space splits values longer than 8 bits into separate registers;
 ///     this means that we can't, for example, infer in the hardware that the
