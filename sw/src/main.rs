@@ -69,6 +69,9 @@ use embedded_graphics::primitives::Line;
 use alloc::vec::Vec;
 use alloc::string::String;
 
+pub mod jtag;
+use jtag::*;
+
 pub struct Bounce {
     vector: Point,
     radius: u32,
@@ -140,6 +143,8 @@ pub struct Repl {
     output: String,
     /// power state variable
     power: bool,
+    /// JTAG state variable
+    jtag: JtagMach,
 }
 
 const PROMPT: &str = "bt> ";
@@ -153,6 +158,7 @@ impl Repl {
                 cmd: String::from(" "),
                 output: String::from("Awaiting input."),
                 power: true,
+                jtag: JtagMach::new(),
             }
         }
     }
@@ -203,6 +209,20 @@ impl Repl {
                 let time: u32 = get_time_ms(&self.p);
                 while get_time_ms(&self.p) - time < 250 { }
                 unsafe{ self.p.GPIO.output.write(|w| w.bits(4)); }
+            } else if self.cmd.trim() == "step" {
+                self.jtag.step();
+            } else if self.cmd.trim() == "id" {
+                let mut id_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "idcode");
+                id_leg.push_u32(0b001001, 6, JtagEndian::Little);
+                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "iddata");
+                data_leg.push_u32(0, 32, JtagEndian::Little);
+                self.jtag.add(id_leg);
+                self.jtag.add(data_leg);
+                self.jtag.next();
+                self.jtag.next();
+                self.jtag.get(); // discard the idcode IR return data
+                let mut iddata: JtagLeg = self.jtag.get().unwrap(); // this contains the actual idcode data
+                self.output = format!("tag: {}, code: 0x{:08x}", iddata.tag(), iddata.pop_u32(32, JtagEndian::Little).unwrap());
             } else {
                 self.output = String::from(self.cmd.trim());
                 self.output.push_str(": not recognized.");

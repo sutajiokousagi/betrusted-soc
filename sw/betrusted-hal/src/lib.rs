@@ -7,6 +7,7 @@ pub mod hal_time;
 pub mod hal_lcd;
 pub mod hal_com;
 pub mod hal_kbd;
+pub mod hal_uart;
 
 #[cfg(test)]
 mod tests {
