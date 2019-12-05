@@ -61,27 +61,6 @@ pub struct JtagLeg {
     tag: String,
 }
 
-/*
-impl Clone for JtagLeg {
-    pub fn copy(&self) -> JtagLeg {
-        let mut cloned: JtagLeg;
-        match self.c {
-            JtagChain::DR => {
-                cloned = JtagLeg::new(JtagChain::DR);
-            },
-            JtagChain::IR => {
-                cloned = JtagLeg::new(JtagChain::IR);
-            }
-        }
-
-        cloned.tag = self.tag.clone();
-        cloned.o = self.o.clone();
-        cloned.i = self.i.clone();
-
-        cloned
-    }
-}*/
-
 impl JtagLeg {
     pub fn new(chain_type: JtagChain, mytag: &str) -> Self {
         JtagLeg {
@@ -108,25 +87,25 @@ impl JtagLeg {
         assert!(count < 128);
         for i in 0..count {
             match endian {
-                JtagEndian::Little => {
+                JtagEndian::Big => {
                     if (data & (1 << i)) == 0 { self.i.push(false) } else { self.i.push(true) }
                 },
-                JtagEndian::Big => {
-                    if (data & (1 << (count-i))) == 0 { self.i.push(false) } else { self.i.push(true) }
+                JtagEndian::Little => {
+                    if (data & (1 << (count-1-i))) == 0 { self.i.push(false) } else { self.i.push(true) }
                 },
             }
         }
     }
 
     pub fn push_u32(&mut self, data: u32, count: usize, endian: JtagEndian) {
-        assert!(count < 32);
+        assert!(count <= 32);
         for i in 0..count {
             match endian {
-                JtagEndian::Little => {
+                JtagEndian::Big => {
                     if (data & (1 << i)) == 0 { self.i.push(false) } else { self.i.push(true) }
                 },
-                JtagEndian::Big => {
-                    if (data & (1 << (count-i))) == 0 { self.i.push(false) } else { self.i.push(true) }
+                JtagEndian::Little => {
+                    if (data & (1 << (count-1-i))) == 0 { self.i.push(false) } else { self.i.push(true) }
                 },
             }
         }
@@ -143,11 +122,11 @@ impl JtagLeg {
         let mut data: u32 = 0;
         for _ in 0..count {
             match endian {
-                JtagEndian::Big => {
+                JtagEndian::Little => {
                     data <<= 1;
                     if self.o.pop().unwrap() { data |= 0x1; }
                 }
-                JtagEndian::Little => {
+                JtagEndian::Big => {
                     data >>= 1;
                     if self.o.pop().unwrap() { data |= 0x8000_0000; }
                 }
@@ -165,11 +144,11 @@ impl JtagLeg {
         let mut data: u128 = 0;
         for _ in 0..count {
             match endian {
-                JtagEndian::Big => {
+                JtagEndian::Little => {
                     data <<= 1;
                     if self.o.pop().unwrap() { data |= 0x1; }
                 },
-                JtagEndian::Little => {
+                JtagEndian::Big => {
                     data >>= 1;
                     if self.o.pop().unwrap() { data |= 0x8000_0000_0000_0000_0000_0000_0000_0000; }
                 }
@@ -181,6 +160,13 @@ impl JtagLeg {
     
     pub fn tag(&self) -> String {
         self.tag.clone()
+    }
+
+    pub fn dbg_i_len(&self) -> usize {
+        self.i.len()
+    }
+    pub fn dbg_o_len(&self) -> usize {
+        self.o.len()
     }
 }
 
@@ -226,6 +212,7 @@ impl JtagPhy for JtagUartPhy {
         } else {
             false
         }
+        //false
     }
 
     fn nosync(&mut self, tdi: bool, tms: bool, tck: bool) -> bool {
@@ -253,6 +240,8 @@ pub struct JtagMach {
     done: Vec<JtagLeg>,
     /// the current leg being processed
     current: Option<JtagLeg>,
+    /// an integer for debug help
+    debug: u32,
     /// a PHY that implements the JtagPhy traits
     phy: JtagUartPhy,
 }
@@ -264,6 +253,7 @@ impl JtagMach {
             pending: Vec::new(),
             done: Vec::new(),
             current: None,
+            debug: 0,
             phy: JtagUartPhy::new(),
         }
     }
@@ -275,8 +265,12 @@ impl JtagMach {
 
     /// get() -- get the oldest result in the done queue. Returns an option.
     pub fn get(&mut self) -> Option<JtagLeg> {
-        self.done.pop()
-    }
+        if self.done.len() > 0 {
+            Some(self.done.remove(0))
+        } else {
+            None
+        }
+    }   
 
     /// has_pending() -- tells if the jtag machine has a pending leg to traverse. Returns the tag of the pending item, or None.
     pub fn has_pending(&self) -> bool {
@@ -296,88 +290,114 @@ impl JtagMach {
         }
     }
 
+    /// for debug
+    pub fn pending_len(&self) -> usize {
+        self.pending.len()
+    }
+    /// for debug
+    pub fn done_len(&self) -> usize {
+        self.done.len()
+    }
+    pub fn dbg_reset(&mut self) {
+        self.debug = 0;
+    }
+    pub fn dbg_get(&self) -> u32 {
+        self.debug
+    }
+
     /// step() -- move state machine by one cycle
     /// if there is nothing in the pending queue, stay in idle
     /// if something in the pending queue, traverse to execute it
     pub fn step(&mut self) {
-        match self.s {
+        self.s = match self.s {
             JtagState::TestReset => {
                 self.phy.sync(false, false);
-                self.s = JtagState::RunIdle;
+                JtagState::RunIdle
             },
             JtagState::RunIdle => {
-                if self.current.is_none() {
-                    if !self.has_pending() {
-                        // nothing pending, nothing current
-                        // stay in the current state
-                        self.phy.sync(false, false);
-                        self.s = JtagState::RunIdle;
-                        return;
-                    } else {
-                        // nothing current, but has pending --> assign a current
-                        self.current = Some(self.pending.pop().unwrap().clone());
-                    }
-                } else {
-                    // we have a current item, traverse to the correct tree based on the type
-                    let cur: JtagLeg = self.current.as_mut().unwrap().clone();
-
+                // we have a current item, traverse to the correct tree based on the type
+                if let Some(ref mut cur) = self.current {
                     match cur.c {
                         JtagChain::DR => {
+                            self.debug = 2;
                             self.phy.sync(false, true);
-                            self.s = JtagState::Select;
                         },
                         JtagChain::IR => {
+                            self.debug = 3;
                             // must be IR -- do two TMS high pulses to get to the IR leg
                             self.phy.sync(false, true);
                             self.phy.sync(false, true);
-                            self.s = JtagState::Select;
                         }
                     }
-                    self.current = Some(cur);
+                    JtagState::Select
+                } else {
+                    if self.pending.len() > 0 {
+                        // nothing current, but has pending --> assign a current
+                        // don't pop the entry, though, until we are finished traversing the leg,
+                        // hence we make a clone of the entry
+                        self.current = Some(self.pending[0].clone());
+                    } else {
+                        // nothing pending, nothing current
+                        // stay in the current state
+                        self.phy.sync(false, false);
+                    }
+                    JtagState::RunIdle
                 }
             },
             JtagState::Select => {
                 self.phy.sync(false, false);
-                self.s = JtagState::Capture;
+                JtagState::Capture
             }, 
             JtagState::Capture => {
                 // always move to shift, because leg structures always have data
                 self.phy.sync(false, false);
-                self.s = JtagState::Shift;
+                JtagState::Shift
             },
             JtagState::Shift => {
                 // shift data until the input vector is exhausted
-                let mut cur: JtagLeg = self.current.as_mut().unwrap().clone();
-                if cur.o.len() > 0 {
-                    let tdi: bool = cur.o.pop().unwrap();
-                    let tdo: bool = self.phy.sync(tdi, false);
-                    cur.i.push(tdo);
+                if let Some(ref mut cur) = self.current {
+                    if let Some(tdi) = cur.i.pop() {
+                        if cur.i.len() > 0 {
+                            let tdo: bool = self.phy.sync(tdi, false);
+                            cur.o.push(tdo);
+                            self.current = Some(cur.clone());
+                            JtagState::Shift 
+                        } else {
+                            // last element should leave the state
+                            let tdo: bool = self.phy.sync(tdi, true);
+                            cur.o.push(tdo);
+                            self.current = Some(cur.clone());
+                            JtagState::Exit1
+                        }
+                    } else {
+                        // Shouldn't happen: no "i", but move on gracefully
+                        JtagState::Exit1
+                    }
                 } else {
-                    self.phy.sync(false, true);
-                    self.s = JtagState::Exit1;
+                    // Shouldn't happen: No "Current", but move on gracefully
+                    JtagState::Exit1
                 }
-                self.current = Some(cur);
             },
             JtagState::Exit1 => {
                 self.phy.sync(false, true);
-                self.s = JtagState::Update;
+                JtagState::Update
             },
             JtagState::Pause => {
                 self.phy.sync(false, true);
-                self.s = JtagState::Exit2;
+                JtagState::Exit2
             },
             JtagState::Exit2 => {
                 self.phy.sync(false, true);
-                self.s = JtagState::Update;
+                JtagState::Update
             },
             JtagState::Update => {
-                self.phy.sync(false, true);
-                self.s = JtagState::RunIdle;
-
+                self.phy.sync(false, false);
+                
                 self.pending.pop(); // remove and discard the pending entry
-                let cur: JtagLeg = self.current.as_mut().unwrap().clone();
-                self.done.push(cur);
-                self.current = None;
+                if let Some(next) = self.current.take() {
+                    self.done.push(next);
+                }
+                JtagState::RunIdle
             }
         }
     }

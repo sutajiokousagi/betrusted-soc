@@ -212,17 +212,43 @@ impl Repl {
             } else if self.cmd.trim() == "step" {
                 self.jtag.step();
             } else if self.cmd.trim() == "id" {
+                self.jtag.reset();
                 let mut id_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "idcode");
                 id_leg.push_u32(0b001001, 6, JtagEndian::Little);
+                self.jtag.add(id_leg);
+                self.jtag.next();
+                // NOW: - check the return data on .get() before using it
+                if self.jtag.get().is_none() { // discard ID code but check that there's something
+                   self.output = format!("ID instruction not in get queue!");
+                   return;
+                }
+
                 let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "iddata");
                 data_leg.push_u32(0, 32, JtagEndian::Little);
-                self.jtag.add(id_leg);
                 self.jtag.add(data_leg);
+                self.jtag.dbg_reset();
                 self.jtag.next();
-                self.jtag.next();
-                self.jtag.get(); // discard the idcode IR return data
-                let mut iddata: JtagLeg = self.jtag.get().unwrap(); // this contains the actual idcode data
-                self.output = format!("tag: {}, code: 0x{:08x}", iddata.tag(), iddata.pop_u32(32, JtagEndian::Little).unwrap());
+                let d: u32 = self.jtag.dbg_get();
+                if let Some(mut iddata) = self.jtag.get() { // this contains the actual idcode data
+                    self.output = format!("tag: {}, code: 0x{:08x}, d:{}", iddata.tag(), iddata.pop_u32(32, JtagEndian::Little).unwrap(), d);
+                } else {
+                    self.output = format!("ID data not in get queue!");
+                }
+            } else if self.cmd.trim() == "loop" {
+                unsafe { self.p.UART.ev_pending.write(|w| w.bits(self.p.UART.ev_pending.read().bits())); }
+                unsafe { self.p.UART.ev_enable.write(|w| w.bits(3)); }
+                
+                // send 0-9 as a test
+                for _ in 0..10 {
+                    for i in 0..10 {
+                        while self.p.UART.txfull.read().bits() != 0 {}
+                        unsafe { self.p.UART.rxtx.write(|w| w.bits(0x30 + i as u32)); }
+                        unsafe { self.p.UART.ev_pending.write(|w| w.bits(1)); }
+                    }
+                    // crlf
+                    unsafe { self.p.UART.rxtx.write(|w| w.bits(0xa as u32)); }
+                    unsafe { self.p.UART.rxtx.write(|w| w.bits(0xd as u32)); }
+                }
             } else {
                 self.output = String::from(self.cmd.trim());
                 self.output.push_str(": not recognized.");

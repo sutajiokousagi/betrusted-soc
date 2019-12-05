@@ -1,5 +1,5 @@
 const EV_TX: u32 = 1;
-const EV_RX: u32 = 1;
+const EV_RX: u32 = 2;
 
 pub struct BtUart {
     p: betrusted_pac::Peripherals,
