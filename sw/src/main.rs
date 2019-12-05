@@ -234,6 +234,92 @@ impl Repl {
                 } else {
                     self.output = format!("ID data not in get queue!");
                 }
+            } else if self.cmd.trim() == "fr" { // crypto fuse
+                self.jtag.reset();
+                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
+                ir_leg.push_u32(0b110001, 6, JtagEndian::Little);
+                self.jtag.add(ir_leg);
+                self.jtag.next();
+                if self.jtag.get().is_none() { // discard ID code but check that there's something
+                   self.output = format!("cmd instruction not in get queue!");
+                   return;
+                }
+
+                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
+                data_leg.push_u128(0, 128, JtagEndian::Big);
+                data_leg.push_u128(1, 128, JtagEndian::Big);
+                self.jtag.add(data_leg);
+                self.jtag.next();
+                if let Some(mut data) = self.jtag.get() {
+                    let efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
+                    let efuse_msb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
+                    self.output = format!("f: 0x{:032x}{:032x}", efuse_msb, efuse_lsb);
+                } else {
+                    self.output = format!("efuse data not in queue!");
+                }
+            } else if self.cmd.trim() == "u4" { // user4
+                self.jtag.reset();
+                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
+                ir_leg.push_u32(0b100011, 6, JtagEndian::Little);
+                self.jtag.add(ir_leg);
+                self.jtag.next();
+                if self.jtag.get().is_none() { // discard ID code but check that there's something
+                   self.output = format!("cmd instruction not in get queue!");
+                   return;
+                }
+
+                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "user4");
+                data_leg.push_u32(0, 32, JtagEndian::Little);
+                self.jtag.add(data_leg);
+                self.jtag.next();
+                if let Some(mut data) = self.jtag.get() {
+                    let u4: u32 = data.pop_u32(32, JtagEndian::Little).unwrap();
+                    self.output = format!("{}/{:08x}", data.tag(), u4);
+                } else {
+                    self.output = format!("user4 data not in queue!");
+                }
+            } else if self.cmd.trim() == "fu" { // user fuse
+                self.jtag.reset();
+                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
+                ir_leg.push_u32(0b110011, 6, JtagEndian::Little);
+                self.jtag.add(ir_leg);
+                self.jtag.next();
+                if self.jtag.get().is_none() { // discard ID code but check that there's something
+                   self.output = format!("cmd instruction not in get queue!");
+                   return;
+                }
+
+                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "ufuse");
+                data_leg.push_u32(0, 32, JtagEndian::Little);
+                self.jtag.add(data_leg);
+                self.jtag.next();
+                if let Some(mut data) = self.jtag.get() {
+                    let efuse: u32 = data.pop_u32(32, JtagEndian::Little).unwrap();
+                    self.output = format!("user fuse: 0x{:08x} / {}", efuse, data.tag());
+                } else {
+                    self.output = format!("ufuse data not in queue!");
+                }
+            } else if self.cmd.trim() == "dna" { // dna
+                self.jtag.reset();
+                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
+                ir_leg.push_u32(0b110010, 6, JtagEndian::Little);
+                self.jtag.add(ir_leg);
+                self.jtag.next();
+                if self.jtag.get().is_none() { // discard ID code but check that there's something
+                   self.output = format!("cmd instruction not in get queue!");
+                   return;
+                }
+
+                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "dna");
+                data_leg.push_u128(0, 64, JtagEndian::Little);
+                self.jtag.add(data_leg);
+                self.jtag.next();
+                if let Some(mut data) = self.jtag.get() {
+                    let dna: u128 = data.pop_u128(64, JtagEndian::Little).unwrap();
+                    self.output = format!("{}/0x{:16x}", data.tag(), dna);
+                } else {
+                    self.output = format!("dna data not in queue!");
+                }
             } else if self.cmd.trim() == "loop" {
                 unsafe { self.p.UART.ev_pending.write(|w| w.bits(self.p.UART.ev_pending.read().bits())); }
                 unsafe { self.p.UART.ev_enable.write(|w| w.bits(3)); }

@@ -84,7 +84,7 @@ impl JtagLeg {
     /// a "count" of 6, and an "endian" of JtagEndian::Big. Do not shift
     /// data all the way to the MSB of the containing "data" parameter in this case!
     pub fn push_u128(&mut self, data: u128, count: usize, endian: JtagEndian) {
-        assert!(count < 128);
+        assert!(count <= 128);
         for i in 0..count {
             match endian {
                 JtagEndian::Big => {
