@@ -136,9 +136,14 @@ impl JtagLeg {
         Some(data)
     }
 
-    pub fn pop_u128(&mut self, count: usize, endian: JtagEndian) -> Option<u128> {
-        if self.o.len() < count {
+    /// pop_u128 does a "Best effort" to return up to count_req elements, will return what is
+    /// available if less is available
+    pub fn pop_u128(&mut self, count_req: usize, endian: JtagEndian) -> Option<u128> {
+        let mut count: usize = count_req;
+        if self.o.len() == 0 {
             return None;
+        } else if self.o.len() < count_req {
+            count = self.o.len();
         }
 
         let mut data: u128 = 0;
@@ -157,7 +162,7 @@ impl JtagLeg {
 
         Some(data)
     }
-    
+
     pub fn tag(&self) -> String {
         self.tag.clone()
     }
@@ -393,7 +398,7 @@ impl JtagMach {
             JtagState::Update => {
                 self.phy.sync(false, false);
                 
-                self.pending.pop(); // remove and discard the pending entry
+                self.pending.remove(0); // remove the oldest entry
                 if let Some(next) = self.current.take() {
                     self.done.push(next);
                 }
