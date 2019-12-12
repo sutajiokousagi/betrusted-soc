@@ -26,6 +26,7 @@ pub mod efuse_ecc {
     }
 }
 
+// run with `cargo test --target x86_64-unknown-linux-gnu`
 #[cfg(test)]
 mod tests {
     use crate::efuse_ecc::*;
