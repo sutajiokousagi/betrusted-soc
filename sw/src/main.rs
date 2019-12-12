@@ -251,8 +251,8 @@ impl Repl {
                 self.jtag.add(data_leg);
                 self.jtag.next();
                 if let Some(mut data) = self.jtag.get() {
-                    let efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
-                    let efuse_msb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
+                    let efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
+                    let efuse_msb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
                     self.output = format!("f: 0x{:032x}{:032x}", efuse_msb, efuse_lsb);
                 } else {
                     self.output = format!("efuse data not in queue!");
@@ -274,8 +274,8 @@ impl Repl {
                 self.jtag.add(data_leg);
                 self.jtag.next();
                 if let Some(mut data) = self.jtag.get() {
-                    let _efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
-                    let efuse_msb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
+                    let _efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
+                    let efuse_msb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
                     self.output = format!("fmsb: 0x{:032x}", efuse_msb);
                 } else {
                     self.output = format!("efuse data not in queue!");
@@ -297,8 +297,8 @@ impl Repl {
                 self.jtag.add(data_leg);
                 self.jtag.next();
                 if let Some(mut data) = self.jtag.get() {
-                    let efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
-                    let _efuse_msb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
+                    let efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
+                    let _efuse_msb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
                     self.output = format!("flsb: 0x{:032x}", efuse_lsb);
                 } else {
                     self.output = format!("efuse data not in queue!");
