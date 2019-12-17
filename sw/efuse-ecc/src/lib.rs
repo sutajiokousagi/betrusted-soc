@@ -4,7 +4,7 @@ pub mod efuse_ecc {
     /// given an unprotected 24-bit data record, return
     /// a number which is the data + its 6-bit ECC code
     pub fn add_ecc(data: u32) -> u32 {
-        assert!(data & 0xF000_0000 == 0); // if the top 8 bits are filled in, that's an error
+        assert!(data & 0xFF00_0000 == 0); // if the top 8 bits are filled in, that's an error
         const GENERATOR: [u32; 6] = [16_515_312, 14_911_249, 10_180_898, 5_696_068, 3_011_720, 16_777_215];
 
         let mut code: u32 = 0;
@@ -14,7 +14,7 @@ pub mod efuse_ecc {
             for bit in 0..24 {
                 parity = parity ^ (((GENERATOR[row] & data) >> bit) & 0x1);
             }
-            code |= parity << row;
+            code ^= parity << row;
         }
         if (code & 0x20) != 0 {
             code = (!code & 0x1F) | 0x20;
