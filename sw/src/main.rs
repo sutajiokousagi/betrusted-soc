@@ -208,7 +208,15 @@ impl Repl {
                 unsafe{ self.p.GPIO.output.write(|w| w.bits(4)); }
                 let time: u32 = get_time_ms(&self.p);
                 while get_time_ms(&self.p) - time < 250 { }
-                unsafe{ self.p.GPIO.output.write(|w| w.bits(4)); }
+                unsafe{ self.p.GPIO.output.write(|w| w.bits(0)); }
+            } else if self.cmd.trim() == "blon" {
+                self.output = String::from("Turning backlight on");
+                com_txrx(&self.p, 0x6007); // turn on the keyboard backlight LEDs
+                com_txrx(&self.p, 0x681F); // turn on the backlight to full brightness (31)
+            } else if self.cmd.trim() == "bloff" {
+                self.output = String::from("Turning backlight off");
+                com_txrx(&self.p, 0x6000);
+                com_txrx(&self.p, 0x6800);
             } else if self.cmd.trim() == "step" {
                 self.jtag.step();
             } else if self.cmd.trim() == "id" {
@@ -366,222 +374,6 @@ impl Repl {
                 } else {
                     self.output = format!("dna data not in queue!");
                 }
-            } else if self.cmd.trim() == "userblow" { 
-                // this code burned the pattern 0x08000500 into user fuse
-                // accidentally ran it twice:   0x00008500 in user fuse now :( oops
-                self.jtag.reset();
-
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "jstart");
-                ir_leg.push_u32(0b001100, 6, JtagEndian::Little);  // JSTART
-                //ir_leg.push_u32(0b010100, 6, JtagEndian::Little);  // ISC_NOOP
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                /*
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "isc_noop");
-                ir_leg.push_u32(0b010100, 6, JtagEndian::Little);  // ISC_NOOP
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "isc_noop");
-                ir_leg.push_u32(0b010100, 6, JtagEndian::Little);  // ISC_NOOP
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                */
-
-                //// unlock bank 1?
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "efuse");
-                ir_leg.push_u32(0b110000, 6, JtagEndian::Little);  // efuse command
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac00004001, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac00004001, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-
-                //// unlock bank 2?
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "efuse");
-                ir_leg.push_u32(0b110000, 6, JtagEndian::Little);  // efuse command
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac000000f9, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0x0, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-
-                //// tranche 3 - i think this burns a bit
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "efuse");
-                ir_leg.push_u32(0b110000, 6, JtagEndian::Little);  // efuse command
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac000040fb, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0x0, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-
-                //// tranche 4 - i think this burns another bit
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "efuse");
-                ir_leg.push_u32(0b110000, 6, JtagEndian::Little);  // efuse command
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac000042fb, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0x0, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-
-                //// tranche 5 - i think this burns another bit
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "efuse");
-                ir_leg.push_u32(0b110000, 6, JtagEndian::Little);  // efuse command
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac00005afb, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0x0, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-
-                //// tranche 6 - i think this burns another bit
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "efuse");
-                ir_leg.push_u32(0b110000, 6, JtagEndian::Little);  // efuse command
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac00005dfb, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0x0, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-
-
-
-                //// issue a JSTART
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "jstart");
-                ir_leg.push_u32(0b001100, 6, JtagEndian::Little);  // JSTART
-                //ir_leg.push_u32(0b010100, 6, JtagEndian::Little);  // ISC_NOOP
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-
-                //// lock bank 1?
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "efuse");
-                ir_leg.push_u32(0b110000, 6, JtagEndian::Little);  // efuse command
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac00004001, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac00004001, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-
-                //// lock bank 2?
-                let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "efuse");
-                ir_leg.push_u32(0b110000, 6, JtagEndian::Little);  // efuse command
-                self.jtag.add(ir_leg);
-                self.jtag.next();
-                if self.jtag.get().is_none() { // discard ID code but check that there's something
-                   self.output = format!("cmd instruction not in get queue!");
-                   return;
-                }
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xa08a28ac000000f9, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0x0, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-                self.jtag.get(); // discard output
-                let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-                data_leg.push_u128(0xff000000ff, 64, JtagEndian::Little);
-                self.jtag.add(data_leg);
-                self.jtag.next();
-
-                if let Some(mut data) = self.jtag.get() {
-                    let fuse: u128 = data.pop_u128(64, JtagEndian::Little).unwrap();
-                    self.output = format!("{}/0x{:016x}", data.tag(), fuse);
-                } else {
-                    self.output = format!("fuse data not in queue!");
-                }
             } else if self.cmd.trim() == "ft" {
                 // this sequence burned 0xC000_2000_000_....0000_0000 into the efuse
                 const FUSE_SEQ: [(JtagChain, usize, u64, &str); 23] = 
@@ -700,10 +492,11 @@ fn main() -> ! {
     let radius: u32 = 14;
     let size: Size = display.lock().size();
     let mut cur_time: u32 = get_time_ms(&p);
-    let mut stat_array: [u16; 10] = [0; 10];
+    let mut _stat_array: [u16; 10] = [0; 10];
+    let mut gg_array: [u16; 4] = [0; 4];
     let mut line_height: i32 = 18;
     let left_margin: i32 = 10;
-    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 13), Point::new(size.width as i32, size.height as i32)));
+    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 10), Point::new(size.width as i32, size.height as i32)));
     let mut tx_index: usize = 0;
     let mut repl: Repl = Repl::new();
 
@@ -749,18 +542,6 @@ fn main() -> ! {
             repl.force_poweroff();
         }
         */
-        /*
-        // pulse the motor once every second
-        if get_time_ms(&p) - elapsed > vibetime {
-            if vibetime > 500 {
-                unsafe{ p.GPIO.output.write(|w| w.bits(4)); }
-                vibetime = 250;
-            } else {
-                unsafe{ p.GPIO.output.write(|w| w.bits(0)); }
-                vibetime = 1000;
-            }
-            elapsed = get_time_ms(&p);
-        }*/
 
         bouncy_ball.update();
         let circle = egcircle!(bouncy_ball.loc, bouncy_ball.radius, 
@@ -768,17 +549,17 @@ fn main() -> ! {
         circle.draw(&mut *display.lock());
         
         // ping the EC and update various records over time
-        if get_time_ms(&p) - cur_time > 100 {
+        if get_time_ms(&p) - cur_time > 250 {
             cur_time = get_time_ms(&p);
             if tx_index == 0 {
-                com_txrx(&p, 0x8000 as u16); // send the pointer reset command
-            } else if tx_index < stat_array.len() + 1 {
-                stat_array[tx_index - 1] = com_txrx(&p, 0xDEAD) as u16; // the transmit is a dummy byte
+                com_txrx(&p, 0x7000 as u16); // send the pointer reset command
+            } else if tx_index < gg_array.len() + 1 {
+                gg_array[tx_index - 1] = com_txrx(&p, 0xDEAD) as u16; // the transmit is a dummy byte
             }
             tx_index += 1;
-            tx_index = tx_index % (stat_array.len() + 2);
+            tx_index = tx_index % (gg_array.len() + 2);
         }
-
+        /*
         for i in 0..4 {
             // but update the result every loop iteration
             let dbg = format!{"s{}: 0x{:04x}  s{}: 0x{:04x}", i*2, stat_array[i*2], i*2+1, stat_array[i*2+1]};
@@ -787,22 +568,22 @@ fn main() -> ! {
             .translate(Point::new(left_margin, cur_line))
             .draw(&mut *display.lock());
             cur_line += line_height;
-        }
-        let dbg = format!{"voltage: {}mV", stat_array[7]};
+        }*/
+        let dbg = format!{"voltage: {}mV", gg_array[2]};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
         .draw(&mut *display.lock());
 
         cur_line += line_height;
-        let dbg = format!{"avg current: {}mA", (stat_array[9] as i16)};
+        let dbg = format!{"avg current: {}mA", (gg_array[0] as i16)};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
         .draw(&mut *display.lock());
 
         cur_line += line_height;
-        let dbg = format!{"sby current: {}mA", (stat_array[8] as i16)};
+        let dbg = format!{"sby current: {}mA", (gg_array[1] as i16)};
         Font12x16::render_str(&dbg)
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
