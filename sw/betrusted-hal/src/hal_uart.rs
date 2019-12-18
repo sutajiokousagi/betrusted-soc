@@ -1,6 +1,8 @@
 const EV_TX: u32 = 1;
 const EV_RX: u32 = 2;
 
+use crate::hal_time::get_time_ms;
+
 pub struct BtUart {
     p: betrusted_pac::Peripherals,
 }
@@ -27,7 +29,9 @@ impl BtUart {
     }
 
     pub fn read(&mut self) -> u8 {
-        while self.p.UART.rxempty.read().bits() != 0 {}
+        let starttime: u32 = get_time_ms(&self.p);
+
+        while (self.p.UART.rxempty.read().bits() != 0) && (get_time_ms(&self.p) - starttime) < 3 {}
         let c: u8 = self.p.UART.rxtx.read().bits() as u8;
         unsafe { self.p.UART.ev_pending.write(|w| w.bits(EV_RX)); }
 
