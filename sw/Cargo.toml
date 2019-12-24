@@ -14,6 +14,7 @@ betrusted-pac = { path = "betrusted-pac" }
 betrusted-hal = { path = "betrusted-hal" }
 alloc-riscv = { path = "alloc-riscv" }
 embedded-graphics = { path = "embedded-graphics/embedded-graphics" }
+efuse-ecc = { path = "efuse-ecc" }
 
 # this lets you use `cargo fix`!
 [[bin]]

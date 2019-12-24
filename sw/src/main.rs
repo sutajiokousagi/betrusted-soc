@@ -282,8 +282,8 @@ impl Repl {
                 self.jtag.add(data_leg);
                 self.jtag.next();
                 if let Some(mut data) = self.jtag.get() {
-                    let _efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
-                    let efuse_msb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
+                    let _efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
+                    let efuse_msb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
                     self.output = format!("fmsb: 0x{:032x}", efuse_msb);
                 } else {
                     self.output = format!("efuse data not in queue!");
@@ -305,8 +305,8 @@ impl Repl {
                 self.jtag.add(data_leg);
                 self.jtag.next();
                 if let Some(mut data) = self.jtag.get() {
-                    let efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
-                    let _efuse_msb: u128 = data.pop_u128(128, JtagEndian::Little).unwrap();
+                    let efuse_lsb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
+                    let _efuse_msb: u128 = data.pop_u128(128, JtagEndian::Big).unwrap();
                     self.output = format!("flsb: 0x{:032x}", efuse_lsb);
                 } else {
                     self.output = format!("efuse data not in queue!");
@@ -431,6 +431,101 @@ impl Repl {
                         self.output = format!("No data in queue!")
                     }
                 }                                           
+            } else if self.cmd.trim() == "f2" {
+                const FUSE_SEQ: [(JtagChain, usize, u64, &str); 45] = 
+                    [
+                        // open a fuse bank
+                        (JtagChain::IR, 6, 0b001100, "JSTART"),
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac00004001, "KEY_UNLOCK1"),
+                        (JtagChain::DR, 64, 0xa08a28ac00004001, "KEY_UNLOCK2"),
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac000000e9, "KEY_BANKa"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BANKa_WAIT"),
+
+                        // specify individual bits within the bank: 0x2A541 which is
+                        // 0x2C02_A541 with ECC
+                        // 0010_1100_0000_0010_1010_0101_0100_0001
+                        //   5  55          5  4 4   4 4  4      4
+                        //   D  BA          1  F D   A 8  6      0
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac000040eb, "KEY_BITa"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITa_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac000046eb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac000048eb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac00004Aeb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac00004Deb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac00004Feb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac000051eb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac00005Aeb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac00005Beb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac00005Deb, "KEY_BITb"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BITb_WAIT"),
+
+                        // close the same fuse bank
+                        (JtagChain::IR, 6, 0b001100, "JSTART"),
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac00004001, "KEY_UNLOCK1"),
+                        (JtagChain::DR, 64, 0xa08a28ac00004001, "KEY_UNLOCK2"),
+                        (JtagChain::IR, 6, 0b110000, "EFUSE"),
+                        (JtagChain::DR, 64, 0xa08a28ac000000e9, "KEY_BANKa"),
+                        (JtagChain::DR, 64, 0x0, "KEY_BANKa_WAIT"),
+
+
+                        // lock the fuse machine - extra DR leg tailing the last EFUSE command bank wait
+                        (JtagChain::DR, 64, 0xff000000ff, "EFUSE_COMMIT"),
+
+                        // diagnostic check to make sure the chain is in a sane state
+                        //(JtagChain::IR, 6, 0b110010, "FUSE_DNA"),
+                        //(JtagChain::DR, 64, 0x0, "DNA_DATA"),
+                    ];
+
+                self.jtag.reset(); // put the chain into TEST_RESET state
+
+                // remainder of this function iterates over FUSE_SEQ and applies it to the JTAG chain
+                // only the final data is reported
+                for tuple in FUSE_SEQ.iter() {
+                    let (chain, count, value, comment) = *tuple;
+                    let mut leg: JtagLeg = JtagLeg::new(chain, comment);
+                    leg.push_u128(value as u128, count, JtagEndian::Little);
+                    self.jtag.add(leg);
+                }
+                while self.jtag.has_pending() {
+                    delay_ms(&self.p, 2);
+                    self.jtag.next();
+                    if let Some(mut data) = self.jtag.get() {
+                        let ret: u128 = data.pop_u128(64, JtagEndian::Little).unwrap();
+                        self.output = format!("{}/0x{:016x}", data.tag(), ret);
+                    } else {
+                        self.output = format!("No data in queue!")
+                    }
+                }                                           
             } else if self.cmd.trim() == "loop" {
                 unsafe { self.p.UART.ev_pending.write(|w| w.bits(self.p.UART.ev_pending.read().bits())); }
                 unsafe { self.p.UART.ev_enable.write(|w| w.bits(3)); }
@@ -486,8 +581,6 @@ fn main() -> ! {
     // initialize vibe motor patch
     unsafe{ p.GPIO.drive.write(|w| w.bits(4)); }
     unsafe{ p.GPIO.output.write(|w| w.bits(0)); }
-    //let mut elapsed: u32 = get_time_ms(&p);
-    //let mut vibetime: u32 = 1000;
 
     let radius: u32 = 14;
     let size: Size = display.lock().size();

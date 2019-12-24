@@ -45,4 +45,10 @@ mod tests {
           assert_eq!(OUTPUTS[i], add_ecc(INPUTS[i]));
         }
     }
+
+    #[test]
+    fn gen_test() {
+        assert_eq!(0x2708_63C1, add_ecc(0x8_63C1));
+        assert_eq!(0x2C02_A541, add_ecc(0x2_A541));
+    }
 }
