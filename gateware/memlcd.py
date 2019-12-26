@@ -3,8 +3,9 @@ from migen.genlib.fsm import FSM, NextState
 
 from litex.soc.interconnect import wishbone
 from litex.soc.interconnect.csr import *
-from litex.soc.integration.doc import AutoDoc, ModuleDoc
 from litex.soc.interconnect.csr_eventmanager import *
+from litex.soc.integration.doc import AutoDoc, ModuleDoc
+
 
 class Memlcd(Module, AutoCSR):
     def __init__(self, pads):
@@ -144,13 +145,13 @@ class Memlcd(Module, AutoCSR):
         The CPU is responsible for not writing data to the LCD while it is updating. Concurrent
         writes to the LCD during updates can lead to unpredictable behavior.
         """)
-        dw = 32
-        width = 336
-        height = 536
+        data_width     = 32
+        width          = 336
+        height         = 536
         bytes_per_line = 44
 
-        self.fb_depth = fb_depth = height * bytes_per_line // (dw//8)
-        pixdata = Signal(32)
+        self.fb_depth = fb_depth = height * bytes_per_line // (data_width//8)
+        pixdata   = Signal(32)
         pixadr_rd = Signal(max=fb_depth)
 
         # 1 is white, which is the "off" state
@@ -176,7 +177,7 @@ class Memlcd(Module, AutoCSR):
 
         self.command = CSRStorage(2, fields=[
             CSRField("UpdateDirty", description="Write a ``1`` to flush dirty lines to the LCD", pulse=True),
-            CSRField("UpdateAll", description="Update full screen regardless of tag state", pulse=True),
+            CSRField("UpdateAll",   description="Update full screen regardless of tag state",    pulse=True),
         ])
 
         self.busy = CSRStatus(1, name="Busy", description="""A ``1`` indicates that the block is currently updating the LCD""")
@@ -186,183 +187,193 @@ class Memlcd(Module, AutoCSR):
         for a default sysclk of 100MHz this yields an LCD SCLK of 1MHz""")
 
         self.submodules.ev = EventManager()
-        self.ev.done = EventSourceProcess()
+        self.ev.done       = EventSourceProcess()
         self.ev.finalize()
-        self.comb += self.ev.done.trigger.eq(self.busy.status) # fire an interupt when busy drops
+        self.comb += self.ev.done.trigger.eq(self.busy.status) # Fire an interupt when busy drops
 
         self.sclk = sclk = getattr(pads, "sclk")
-        self.scs = scs = getattr(pads, "scs")
-        self.si = si = getattr(pads, "si")
+        self.scs  = scs  = getattr(pads, "scs")
+        self.si   = si   = getattr(pads, "si")
         self.sendline = sendline = Signal()
         self.linedone = linedone = Signal()
-        updateall = Signal()
+        updateall   = Signal()
         fetch_dirty = Signal()
-        update_line = Signal(max=height)  # keep track of both line and address to avoid instantiating a multiplier
+        update_line = Signal(max=height) # Keep track of both line and address to avoid instantiating a multiplier
         update_addr = Signal(max=height*bytes_per_line)
 
         fsm_up = FSM(reset_state="IDLE")
         self.submodules += fsm_up
 
         fsm_up.act("IDLE",
-                   If(self.command.fields.UpdateDirty | self.command.fields.UpdateAll,
-                      NextState("START"),
-                      NextValue(self.busy.status, 1),
-                      NextValue(fetch_dirty, 1),
-                      If(self.command.fields.UpdateAll,
-                         NextValue(updateall, 1))
-                      .Else(
-                         NextValue(updateall, 0)
-                      )
-                   ).Else(
-                      NextValue(self.busy.status, 0),
-                   )
+            If(self.command.fields.UpdateDirty | self.command.fields.UpdateAll,
+                NextValue(self.busy.status, 1),
+                NextValue(fetch_dirty, 1),
+                If(self.command.fields.UpdateAll,
+                    NextValue(updateall, 1)
+                ).Else(
+                    NextValue(updateall, 0)
+                ),
+                NextState("START")
+            ).Else(
+                NextValue(self.busy.status, 0)
+            )
         )
         fsm_up.act("START",
-                   NextValue(update_line, height),
-                   NextValue(update_addr, (height -1) * bytes_per_line), # represents the byte address of the beginning of the last line
-                   NextState("FETCHDIRTY"),
+            NextValue(update_line, height),
+            NextValue(update_addr, (height -1) * bytes_per_line), # Represents the byte address of the beginning of the last line
+            NextState("FETCHDIRTY")
         )
-        fsm_up.act("FETCHDIRTY", # wait one cycle delay for the pixel data to be retrieved before evaluating it
-                   NextState("CHECKDIRTY"),
+        fsm_up.act("FETCHDIRTY", # Wait one cycle delay for the pixel data to be retrieved before evaluating it
+            NextState("CHECKDIRTY")
         )
         fsm_up.act("CHECKDIRTY",
-                   If(update_line == 0,
-                      NextState("IDLE")
-                   ).Else(
-                       If( (pixdata[16:] != 0) | updateall,
-                          NextState("DIRTYLINE"),
-                       ).Else(
-                           NextState("FETCHDIRTY"),
-                           NextValue(update_line, update_line - 1),
-                           NextValue(update_addr, update_addr - bytes_per_line),
-                       )
-                   )
+            If(update_line == 0,
+                NextState("IDLE")
+            ).Else(
+                If( (pixdata[16:] != 0) | updateall,
+                    NextState("DIRTYLINE"),
+                ).Else(
+                    NextValue(update_line, update_line - 1),
+                    NextValue(update_addr, update_addr - bytes_per_line),
+                    NextState("FETCHDIRTY")
+                )
+            )
         )
         fsm_up.act("DIRTYLINE",
-                   NextValue(fetch_dirty, 0),
-                   sendline.eq(1),
-                   NextState("WAITDONE"),
+            NextValue(fetch_dirty, 0),
+            sendline.eq(1),
+            NextState("WAITDONE")
         )
         fsm_up.act("WAITDONE",
-                   If(linedone,
-                      NextValue(fetch_dirty, 1),
-                      NextState("FETCHDIRTY"),
-                      NextValue(update_line, update_line - 1),
-                      NextValue(update_addr, update_addr - bytes_per_line),
-                    )
+            If(linedone,
+                NextValue(fetch_dirty, 1),
+                NextValue(update_line, update_line - 1),
+                NextValue(update_addr, update_addr - bytes_per_line),
+                NextState("FETCHDIRTY")
+            )
         )
 
         modeshift = Signal(16)
-        mode = Signal(6)
-        pixshift = Signal(32)
-        pixcount = Signal(max=width)
-        bitreq = Signal()
-        bitack = Signal()
-        self.comb += mode.eq(1)    # always in line write mode, not clearing, no vcom management necessary
+        mode      = Signal(6)
+        pixshift  = Signal(32)
+        pixcount  = Signal(max=width)
+        bitreq    = Signal()
+        bitack    = Signal()
+        self.comb += mode.eq(1) # Always in line write mode, not clearing, no vcom management necessary
         fsm_phy = FSM(reset_state="IDLE")
         self.submodules += fsm_phy
-        # update_addr units is in bytes. [2:] turns bytes to words
+        # Update_addr units is in bytes. [2:] turns bytes to words
         # pixcount units are in pixels. [3:] turns pixels to bytes
-        self.comb += If(fetch_dirty, pixadr_rd.eq( (update_addr + bytes_per_line - 4)[2:] )
-            ).Else(pixadr_rd.eq( (update_addr + pixcount[3:])[2:] ))
-
+        self.comb += [
+            If(fetch_dirty,
+                pixadr_rd.eq((update_addr + bytes_per_line - 4)[2:])
+            ).Else(
+                pixadr_rd.eq((update_addr + pixcount[3:])[2:])
+            )
+         ]
         scs_cnt = Signal(max=200)
         fsm_phy.act("IDLE",
             NextValue(si, 0),
             NextValue(linedone, 0),
             If(sendline,
-               NextValue(scs, 1),
-               NextValue(scs_cnt, 200), # 2 us setup
-               NextState("SCS_SETUP"),
-               NextValue(pixcount, 16),
-               NextValue(modeshift, Cat(mode, update_line)),
+                NextValue(scs, 1),
+                NextValue(scs_cnt, 200), # 2 us setup
+                NextValue(pixcount, 16),
+                NextValue(modeshift, Cat(mode, update_line)),
+                NextState("SCS_SETUP")
             ).Else(
                 NextValue(scs, 0)
             )
         )
         fsm_phy.act("SCS_SETUP",
             If(scs_cnt > 0,
-               NextValue(scs_cnt, scs_cnt - 1)
+                NextValue(scs_cnt, scs_cnt - 1)
             ).Else(
                 NextState("MODELINE")
             )
         )
         fsm_phy.act("MODELINE",
             If(pixcount > 0,
-               NextValue(modeshift, modeshift[1:]),
-               NextValue(si, modeshift[0]),
-               NextValue(pixcount, pixcount - 1),
-               bitreq.eq(1),
-               NextState("MODELINEWAIT"),
+                NextValue(modeshift, modeshift[1:]),
+                NextValue(si, modeshift[0]),
+                NextValue(pixcount, pixcount - 1),
+                bitreq.eq(1),
+                NextState("MODELINEWAIT")
             ).Else(
-                NextState("DATA"),
                 NextValue(pixcount, 1),
                 NextValue(pixshift, pixdata),
+                NextState("DATA")
             )
         )
         fsm_phy.act("MODELINEWAIT",
-            If(bitack, NextState("MODELINE"))
+            If(bitack,
+                NextState("MODELINE")
+            )
         )
         fsm_phy.act("DATA",
             If(pixcount < width + 17,
-               If(pixcount[0:5] == 0,
-                  NextValue(pixshift, pixdata),
-               ).Else(
-                   NextValue(pixshift, pixshift[1:]),
-               ),
-               NextValue(scs, 1),
-               NextValue(si, pixshift[0]),
-               NextValue(pixcount, pixcount + 1),
-               bitreq.eq(1),
-               NextState("DATAWAIT"),
+                If(pixcount[0:5] == 0,
+                    NextValue(pixshift, pixdata),
+                ).Else(
+                    NextValue(pixshift, pixshift[1:]),
+                ),
+                NextValue(scs, 1),
+                NextValue(si, pixshift[0]),
+                NextValue(pixcount, pixcount + 1),
+                bitreq.eq(1),
+                NextState("DATAWAIT")
             ).Else(
-                NextState("SCS_HOLD"),
                 NextValue(si, 0),
                 NextValue(scs_cnt, 100), # 1 us hold
+                NextState("SCS_HOLD")
             )
         )
         fsm_phy.act("SCS_HOLD",
-                If(scs_cnt > 0,
-                   NextValue(scs_cnt, scs_cnt - 1)
-                ).Else(
-                   NextValue(scs, 0),
-                   NextState("SCS_LOW"),
-                   NextValue(scs_cnt, 100), # 1us minimum low time
-                )
+            If(scs_cnt > 0,
+                NextValue(scs_cnt, scs_cnt - 1)
+            ).Else(
+                NextValue(scs, 0),
+                NextValue(scs_cnt, 100), # 1us minimum low time
+                NextState("SCS_LOW")
+            )
         )
         fsm_phy.act("SCS_LOW",
-                If(scs_cnt > 0,
-                   NextValue(scs_cnt, scs_cnt - 1)
-                ).Else(
-                   NextValue(linedone, 1),
-                   NextState("IDLE")
-                )
+            If(scs_cnt > 0,
+                NextValue(scs_cnt, scs_cnt - 1)
+            ).Else(
+                NextValue(linedone, 1),
+                NextState("IDLE")
+            )
         )
         fsm_phy.act("DATAWAIT",
-            If(bitack, NextState("DATA"))
+            If(bitack,
+                NextState("DATA")
+            )
         )
 
-        # this handles clock division
+        # This handles clock division
         fsm_bit = FSM(reset_state="IDLE")
         self.submodules += fsm_bit
         clkcnt = Signal(8)
         fsm_bit.act("IDLE",
             NextValue(sclk, 0),
             NextValue(clkcnt, self.prescaler.storage),
-            If(bitreq, NextState("SCLK_LO")),
+            If(bitreq,
+                NextState("SCLK_LO")
+            )
         )
         fsm_bit.act("SCLK_LO",
             NextValue(clkcnt, clkcnt - 1),
             If(clkcnt < self.prescaler.storage[1:],
                NextValue(sclk, 1),
-               NextState("SCLK_HI"),
-            ),
+               NextState("SCLK_HI")
+            )
         )
         fsm_bit.act("SCLK_HI",
             NextValue(clkcnt, clkcnt - 1),
             If(clkcnt == 0,
-               NextValue(sclk, 0),
-               NextState("IDLE"),
-               bitack.eq(1),
-            ),
+                NextValue(sclk, 0),
+                NextState("IDLE"),
+                bitack.eq(1)
+            )
         )
