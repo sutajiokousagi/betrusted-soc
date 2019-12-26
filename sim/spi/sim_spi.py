@@ -131,10 +131,10 @@ class SimpleSim(SoCCore):
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
 
         # SPI interface
-        self.submodules.spimaster = spi.SpiMaster(platform.request("com"))
+        self.submodules.spimaster = spi.SPIMaster(platform.request("com"))
         self.add_csr("spimaster")
 
-        self.submodules.spislave = spi.SpiSlave(platform.request("slave"))
+        self.submodules.spislave = spi.SPISlave(platform.request("slave"))
         self.add_csr("spislave")
 
         # external SRAM to make BIOS build happy

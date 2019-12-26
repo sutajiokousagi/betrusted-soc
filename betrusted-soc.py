@@ -500,7 +500,7 @@ class BaseSoC(SoCCore):
         self.register_mem("memlcd", self.mem_map["memlcd"], self.memlcd.bus, size=self.memlcd.fb_depth*4)
 
         # COM SPI interface
-        self.submodules.com = spi.SpiMaster(platform.request("com"))
+        self.submodules.com = spi.SPIMaster(platform.request("com"))
         self.add_csr("com")
         # 20.83ns = 1/2 of 24MHz clock, we are doing falling-to-rising timing
         # up5k tsu = -0.5ns, th = 5.55ns, tpdmax = 10ns
