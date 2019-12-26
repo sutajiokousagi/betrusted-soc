@@ -29,8 +29,8 @@ class SpiMaster(Module, AutoCSR, AutoDoc):
     def __init__(self, pads):
         self.intro = ModuleDoc("""Simple soft SPI master module optimized for Betrusted applications
 
-        Requires a clock domain 'spi', which runs at the speed of the SPI bus. 
-        
+        Requires a clock domain 'spi', which runs at the speed of the SPI bus.
+
         Simulation benchmarks 16.5us to transfer 16x16 bit words including setup overhead (sysclk=100MHz, spiclk=25MHz)
         which is about 15Mbps system-level performance, assuming the receiver can keep up.
         """)

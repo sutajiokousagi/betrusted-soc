@@ -180,7 +180,7 @@ top dut (
     .com_mosi(mosi),
     .com_miso(miso),
     .com_csn(csn),
-    
+
     .slave_sclk(sclk),
     .slave_mosi(mosi),
     .slave_miso(miso),
@@ -192,7 +192,7 @@ top dut (
 // initial value = 16'ha503;
 // always @(posedge sclk) begin
 //    miso <= value[15];
-//    value <= {value[14:0],value[15]};    
+//    value <= {value[14:0],value[15]};
 // end
 
 endmodule""")

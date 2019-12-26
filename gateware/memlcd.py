@@ -9,34 +9,34 @@ from litex.soc.interconnect.csr_eventmanager import *
 class Memlcd(Module, AutoCSR):
     def __init__(self, pads):
         self.background = ModuleDoc("""Memlcd: Driver for the SHARP Memory LCD model LS032B7DD02
-        
+
         The LS032B7DD02 is a 336x536 pixel black and white memory LCD, with a 200ppi dot pitch.
         Memory LCDs can be thought of as 'fast E-ink displays that consume a tiny bit of standby
         power', as seen by these properties:
-        
+
         * Extremely low standby power (30uW typ hold mode)
         * No special bias circuitry required to maintain image in hold mode
-        * 120 degree viewing angle, 1:35 contrast ratio 
+        * 120 degree viewing angle, 1:35 contrast ratio
         * All control logic fabricated on-glass using TFT devices that are auditable with
           a common 40x power desktop microscope and a bright backlight source
-          
+
         This last property in particular makes the memory LCD extremely well suited for situations
-        where absolute visibility into the construction of a secure enclave is desired. 
-        
+        where absolute visibility into the construction of a secure enclave is desired.
+
         The memory organization of the LS032B7DD02 is simple: 536 lines of pixel data 336 wide.
         Each pixel is 1 bit (the display is black and white), and is fed into the module from
         left to right as pixels 1 through 336, inclusive. Lines are enumerated from top to bottom,
-        from 1 to 536, inclusive. 
-                                                                                      
-        The LCD can only receive serial data. The protocol is a synchronous serial interface with 
+        from 1 to 536, inclusive.
+
+        The LCD can only receive serial data. The protocol is a synchronous serial interface with
         an active high chip select. All data words are transmitted LSB first. A line transfer is
         initiated by sending a 6-bit mode selection, a 10-bit row address, and the subsequent 336
         pixels, followed by 16 dummy bits which transfer the data from the LCD holding register to
-        the display itself. 
+        the display itself.
 
             .. wavedrom::
                 :caption: Single line data transfer to memory LCD
-                
+
                 { "signal": [
                     { "name": "SCLK", "wave": "0.P.......|......|...|..l." },
                     { "name": "SCS", "wave": "01........|......|...|.0.." },
@@ -45,14 +45,14 @@ class Memlcd(Module, AutoCSR):
                 ],
                   "edge": ['a<->b 16 cycles']
                 }
-        
+
         Alternatively, one can send successive lines without dropping SCS by substituting the 16 dummy
         bits at the end with a 6-bit don't care preamble (where the mode bits would have been), 10 bits
         of row address, and then the pixel data.
-        
+
             .. wavedrom::
               :caption: Multiple line data transfer to memory LCD
-              
+
               { "signal": [
                     { "name": "SCLK", "wave": "0.P.......|......|...|....|....." },
                     { "name": "SCS", "wave": "01........|......|...|....|....." },
@@ -61,27 +61,27 @@ class Memlcd(Module, AutoCSR):
               ],
                 "edge": ['a<->b 6 cycles']
               }
-        
+
         The very last line in the multiple line data transfer must terminate with 16 dummy cycles.
 
         Mode bits M0-M2 have the following meaning:
            M0: Set to 1 when transferring data lines. Set to 0 for hold mode, see below.
            M1: VCOM inversion flag. Ignore when hardware strap pin EXTMODE is high. Betrusted
                sets EXTMODE high, so the VCOM inversion is handled by low-power aux hardware.
-               When EXTMODE is low, software must explicitly manage the VCOM inversion flag such the 
+               When EXTMODE is low, software must explicitly manage the VCOM inversion flag such the
                flag polarity changes once every second "as much as possible".
            M2: Normally set to 0. Set to 1 for all clear (see below)
-        
+
         Data bit polarity:
            1 = White
            0 = Black
-        
+
         For 'Hold mode' and 'All clear', a total of 16 cycles are sent, the first three being
-        the mode bit and the last 13 being dummy cycles. 
-        
+        the mode bit and the last 13 being dummy cycles.
+
             .. wavedrom::
               :caption: Hold and all clear timings
-        
+
               { "signal": [
                     { "name": "SCLK", "wave": "0.P...|.l" },
                     { "name": "SCS", "wave": "01....|0." },
@@ -89,12 +89,12 @@ class Memlcd(Module, AutoCSR):
                     { "node": ".....a.b..."},
               ],
                 "edge": ['a<->b 13 cycles']
-            }          
-        
+            }
+
         All signals are 3.0V compatible, 5V tolerant (VIH is 2.7V-VDD). The display itself requires
         a single 5V power supply (4.8-5.5V typ 5.8V abs max). In hold mode, typical power is 30uW, max 330uW;
         with data updating at 1Hz, power is 250uW, max 750uW (SCLK=1MHz, EXTCOMMIN=1Hz).
-        
+
         * The maximum clock frequency for SCLK is 2MHz (typ 1MHz).
         * EXTCOMMIN frequency is 1-10Hz, 1Hz typ
         * EXTCOMMIN minimum high duration is 1us
@@ -106,20 +106,20 @@ class Memlcd(Module, AutoCSR):
         """)
 
         self.interface = ModuleDoc("""Wishbone interface for Memlcd
-        
+
         Memlcd maintains a local framebuffer for the LCD. The CPU can read and write
         to the frame buffer to update pixel data, and then request a screen update to
-        commit the frame buffer to the LCD. 
-        
+        commit the frame buffer to the LCD.
+
         Only full lines can be updated on a memory LCD; partial updates are not possible.
         In order to optimize the update process, Memlcd maintains a "dirty bit" associated
         with each line. Only lines with modified pixels are written to the screen after an
-        update request. 
-        
+        update request.
+
         A line is 336 bits wide. When padded to 32-bit words, this yields a line width of
         44 bytes (0x2C, or 352 bits). In order to simplify math, the frame buffer rounds
-        the line width up to the nearest power of two, or 64 bytes. 
-        
+        the line width up to the nearest power of two, or 64 bytes.
+
         The unused bits can be used as a "hint" to the Memlcd block as to which lines
         require updating. If the unused bits have any value other than 0, the Memlcd block
         will update those lines when an "UpdateDirty" command is triggered. It is up
@@ -127,20 +127,20 @@ class Memlcd(Module, AutoCSR):
         by the block upon update. Typically the clearing of the bits would be handled
         during the update-finished interrupt handling routine. If the dirty bits are
         not used, an "UpdateAll" command can be invoked, which will update every
-        line of the LCD regardless of the contents of the dirty bits. 
-        
-        The total depth of the memory is thus 44 bytes * 536 lines = 23,584 bytes or 
+        line of the LCD regardless of the contents of the dirty bits.
+
+        The total depth of the memory is thus 44 bytes * 536 lines = 23,584 bytes or
         5,896 words.
-        
+
         Pixels are stored with the left-most pixel in the MSB of each 32-bit word, with
         the left-most pixels occupying the lowest address in the line.
-        
+
         Lines are stored with the bottom line of the screen at the lowest address.
-        
+
         These parameters are chosen so that a 1-bit BMP file can be copied into the frame
         buffer and it will render directly to the screen with no further transformations
         required.
-        
+
         The CPU is responsible for not writing data to the LCD while it is updating. Concurrent
         writes to the LCD during updates can lead to unpredictable behavior.
         """)

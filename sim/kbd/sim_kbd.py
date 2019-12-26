@@ -160,7 +160,7 @@ always #41.16666 clk12 = ~clk12;
 reg lpclk;
 initial lpclk = 1'b1;
 //always #15258.789 lpclk = ~lpclk;
-always #400 lpclk = ~lpclk;   // speed up faster than real-time, but still much slower than main clocks 
+always #400 lpclk = ~lpclk;   // speed up faster than real-time, but still much slower than main clocks
 
 wire [8:0] row;
 wire [9:0] col;
@@ -171,7 +171,7 @@ top dut (
 
     .kbd_row(row),
     .kbd_col(col),
-    
+
     .lpclk(lpclk)
 );
 

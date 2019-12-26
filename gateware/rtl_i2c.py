@@ -12,7 +12,7 @@ class RtlI2C(Module, AutoCSR, AutoDoc):
     """Verilog RTL-based Portable I2C Core"""
     def __init__(self, platform, pads):
         self.intro = ModuleDoc("""RtlI2C: A verilog RTL-based I2C core
-        RtlI2C is an RTL-based I2C core derived from the OpenCores I2C master IP. 
+        RtlI2C is an RTL-based I2C core derived from the OpenCores I2C master IP.
         """)
         self.sda = TSTriple(1)
         self.scl = TSTriple(1)
@@ -28,7 +28,7 @@ class RtlI2C(Module, AutoCSR, AutoDoc):
 
         self.prescale = CSRStorage(16, reset=0xFFFF, name="prescale", description="""
         Prescaler value. Set to (module clock / (5 * I2C freq) - 1). Example: if module clock
-        is equal to sysclk; syclk is 100MHz; and I2C freq is 100kHz, then prescaler 
+        is equal to sysclk; syclk is 100MHz; and I2C freq is 100kHz, then prescaler
         is (100MHz / (5 * 100kHz) - 1) = 199. Reset value: 0xFFFF""")
         self.control = CSRStorage(fields=[
             CSRField("Resvd", size=6, description="Reserved (for cross-compatibility with OpenCores drivers)"),
@@ -36,7 +36,7 @@ class RtlI2C(Module, AutoCSR, AutoDoc):
             CSRField("EN", description="When set to `1`, the core is enabled."),
         ])
         self.txr = CSRStorage(8, name="txr", description="""
-        Next byte to transmit to slave devices. LSB indicates R/W during address phases, 
+        Next byte to transmit to slave devices. LSB indicates R/W during address phases,
         `1` for reading from slaves, `0` for writing to slaves""")
         self.rxr = CSRStatus(8, name="rxr", description="""
         Data being read from slaved devices""")
