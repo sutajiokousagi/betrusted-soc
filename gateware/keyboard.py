@@ -7,41 +7,38 @@ from litex.soc.interconnect.csr_eventmanager import *
 # Relies on a clock called "kbd" for delay counting
 # Input and output through "i" and "o" signals respectively
 class Debounce(Module):
-    def __init__(self, debounce_count):
+    def __init__(self, n):
         self.i = Signal()
         self.o = Signal()
 
-        sync_i = Signal()
-        self.specials += MultiReg(self.i, sync_i, odomain="kbd");
+        # # #
+
+        i_kbd = Signal()
         o_kbd = Signal()
-        self.specials += MultiReg(o_kbd, self.o)
+        count = Signal(max=(2*n))
 
-        count = Signal(max=(2*debounce_count))
-
+        self.specials += MultiReg(self.i, i_kbd, odomain="kbd");
         self.sync.kbd += [
-            If( count >= debounce_count,
-                o_kbd.eq(1)
+            # Basic idea: We want to debounce our input signal for n cycles:
+            # If key is pressed, count up to n; if it bounces, reset count to 0. The key is declared
+            # pressed when held for n successive cycles. At this point, count is set to 2*n and the
+            # same process is so repeated for the key release, except counting down to n.
+            If(i_kbd,
+                count.eq(count + 1),
+                 # Once we've reached n, "snap" up to 2x n to prep for key release
+                If(count >= n,
+                    count.eq(2*n),
+                )
             ).Else(
-                o_kbd.eq(0)
-            ),
-
-            # Basic idea: debounce_count is how long you want to debounce for
-            # If key is pressed, count up to debounce_count; if it bounces, reset to 0 count
-            # Only until key is held for debounce_count successive counts, do we declare a key press.
-            # At this point, we set the count to 2*debounce_count, so we can repeat the same process for
-            # the key release, except counting down to 0.
-            If(sync_i & count < debounce_count,
-               count.eq(count + 1),
-            ).Elif( sync_i & count >= debounce_count,
-                count.eq(2*debounce_count),  # once we've reached debounce_count, "snap" up to 2x debounce_count to prep for key release
-            ).Elif( ~sync_i & count < debounce_count,
-                count.eq(0),  # once we've fell below debounce_count, "snap" down to 0 to prepare for next key press
-            ).Elif( ~sync_i & count >= debounce_count,
                 count.eq(count - 1),
-            ).Else(
-                count.eq(count) # should be unreachable? I think I covered all the states...
-            )
+                # Once we've fell below n, "snap" down to 0 to prepare for next key press
+                If(count < n,
+                    count.eq(0)
+                )
+            ),
+            o_kbd.eq(count >= n)
         ]
+        self.specials += MultiReg(o_kbd, self.o)
 
 # A hardware key scanner that can run even when the CPU is powered down or stopped
 class KeyScan(Module, AutoCSR, AutoDoc):
