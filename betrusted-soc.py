@@ -8,37 +8,35 @@ LX_DEPENDENCIES = ["riscv", "vivado"]
 
 # Import lxbuildenv to integrate the deps/ directory
 import lxbuildenv
+import lxsocdoc
+
+from random import SystemRandom
 import argparse
 
 from migen import *
-from litex.build.generic_platform import *
-from litex.soc.integration.soc_core import *
-from litex.build.xilinx import XilinxPlatform, VivadoProgrammer
-from litex.soc.integration.builder import *
-
-from litex.soc.cores import spi_flash
-
 from migen.genlib.resetsync import AsyncResetSynchronizer
+from migen.genlib.cdc import MultiReg
+
+from litex.build.generic_platform import *
+from litex.build.xilinx import XilinxPlatform, VivadoProgrammer
 
 from litex.soc.interconnect.csr import *
 from litex.soc.interconnect.csr_eventmanager import *
-
+from litex.soc.integration.soc_core import *
+from litex.soc.integration.builder import *
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
+from litex.soc.cores import spi_flash
 
 from gateware import info
 from gateware import sram_32
 from gateware import memlcd
 from gateware import spi
 from gateware import messible
-from gateware import rtl_i2c
+from gateware import i2c
 from gateware import ticktimer
-from migen.genlib.cdc import MultiReg
+
 from gateware import spinor
 from gateware import keyboard
-
-from random import SystemRandom
-
-import lxsocdoc
 
 _io = [
     # see main() for UART pins
@@ -156,7 +154,7 @@ _io = [
         Subsignal("d", Pins(
             "M2  R4  P2  L4  L1  M1  R1  P1 "
             "U3  V2  V4  U2  N2  T1  K6  J6 "
-            "V16 V15 U17 U18 P17 T18 P18 M17 " 
+            "V16 V15 U17 U18 P17 T18 P18 M17 "
             "N3  T4  V13 P15 T14 R15 T3  R7 "), IOStandard("LVCMOS18")),
         Subsignal("dm_n", Pins("V3 R2 T5 T13"), IOStandard("LVCMOS18")),
     ),
@@ -518,7 +516,7 @@ class BaseSoC(SoCCore):
         self.platform.add_false_path_constraints(self.crg.cd_spi.clk, self.crg.cd_sys.clk)
 
         # add I2C interface
-        self.submodules.i2c = rtl_i2c.RtlI2C(platform, platform.request("i2c", 0))
+        self.submodules.i2c = i2c.RTLI2C(platform, platform.request("i2c", 0))
         self.add_csr("i2c")
         self.add_interrupt("i2c")
 
@@ -573,13 +571,13 @@ class BaseSoC(SoCCore):
                      attr={"KEEP", "DONT_TOUCH", "icap0"}
                      )
         ]
-        
+
         # turns into the following verilog:
 (* DONT_TOUCH = "TRUE", KEEP = "TRUE", LOC = "ICAP_X0Y0" *) ICAPE2 ICAPE2(
         .I(1'd0),
         .RDWRB(1'd1)
 );
-        
+
 """
 
 

@@ -1,9 +1,10 @@
 from migen import *
+from migen.genlib.cdc import MultiReg
 
 from litex.soc.interconnect.csr import *
-from migen.genlib.cdc import MultiReg
 from litex.soc.interconnect.csr_eventmanager import *
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
+
 
 class TickTimer(Module, AutoCSR, AutoDoc):
     """Millisecond timer"""
@@ -11,11 +12,11 @@ class TickTimer(Module, AutoCSR, AutoDoc):
         self.clkspertick = int(clkspertick)
 
         self.intro = ModuleDoc("""TickTimer: A practical systick timer.
-        
+
         TIMER0 in the system gives a high-resolution, sysclk-speed timer which overflows
         very quickly and requires OS overhead to convert it into a practically usable time source
         which counts off in systicks, instead of sysclks.
-        
+
         The hardware parameter to the block is the number of sysclocks per tick.
         """)
 

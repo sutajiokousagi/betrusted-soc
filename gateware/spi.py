@@ -1,8 +1,9 @@
+from migen.genlib.cdc import MultiReg
+from migen.genlib.cdc import BlindTransfer
+
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
 from litex.soc.interconnect.csr_eventmanager import *
 
-from migen.genlib.cdc import MultiReg
-from migen.genlib.cdc import BlindTransfer
 
 class PulseStretch(Module):  # simple module to stretch a pulse out by 10 cycles to cross into the slower SPI domain
     def __init__(self):
@@ -28,8 +29,8 @@ class SpiMaster(Module, AutoCSR, AutoDoc):
     def __init__(self, pads):
         self.intro = ModuleDoc("""Simple soft SPI master module optimized for Betrusted applications
 
-        Requires a clock domain 'spi', which runs at the speed of the SPI bus. 
-        
+        Requires a clock domain 'spi', which runs at the speed of the SPI bus.
+
         Simulation benchmarks 16.5us to transfer 16x16 bit words including setup overhead (sysclk=100MHz, spiclk=25MHz)
         which is about 15Mbps system-level performance, assuming the receiver can keep up.
         """)

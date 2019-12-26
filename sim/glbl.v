@@ -21,7 +21,7 @@ module glbl ();
     wire FCSBO_GLBL;
     wire [3:0] DO_GLBL;
     wire [3:0] DI_GLBL;
-   
+
     reg GSR_int;
     reg GTS_int;
     reg PRLD_int;

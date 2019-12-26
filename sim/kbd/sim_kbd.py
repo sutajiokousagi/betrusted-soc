@@ -15,8 +15,8 @@ from migen import *
 
 from litex.build.generic_platform import *
 from litex.build.xilinx import XilinxPlatform
-from litex.soc.integration.soc_core import *
 
+from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
 from litex.soc.cores.clock import *
 
@@ -160,7 +160,7 @@ always #41.16666 clk12 = ~clk12;
 reg lpclk;
 initial lpclk = 1'b1;
 //always #15258.789 lpclk = ~lpclk;
-always #400 lpclk = ~lpclk;   // speed up faster than real-time, but still much slower than main clocks 
+always #400 lpclk = ~lpclk;   // speed up faster than real-time, but still much slower than main clocks
 
 wire [8:0] row;
 wire [9:0] col;
@@ -171,7 +171,7 @@ top dut (
 
     .kbd_row(row),
     .kbd_col(col),
-    
+
     .lpclk(lpclk)
 );
 
@@ -192,7 +192,7 @@ def run_sim(gui=False):
         call_cmd = ""
     os.system(call_cmd + "cd run && cp gateware/*.init .")
     os.system(call_cmd + "cd run && cp gateware/*.v .")
-    os.system(call_cmd + "cd run && xvlog ../glbl.v")
+    os.system(call_cmd + "cd run && xvlog ../../glbl.v")
     os.system(call_cmd + "cd run && xvlog top.v -sv")
     os.system(call_cmd + "cd run && xvlog top_tb.v -sv ")
     os.system(call_cmd + "cd run && xvlog /home/bunnie/code/betrusted-soc/deps/litex/litex/soc/cores/cpu/vexriscv/verilog/VexRiscv.v")

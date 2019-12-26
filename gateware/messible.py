@@ -1,8 +1,9 @@
+from migen import *
+from migen.genlib import fifo
+
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
 from litex.soc.interconnect.csr import AutoCSR, CSRStatus, CSRStorage, CSRField
 
-from migen import *
-from migen.genlib import fifo
 
 class Messible(Module, AutoCSR, AutoDoc):
     """Messaging-style Ansible"""

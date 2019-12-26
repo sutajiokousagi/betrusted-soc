@@ -15,8 +15,8 @@ from migen import *
 
 from litex.build.generic_platform import *
 from litex.build.xilinx import XilinxPlatform
-from litex.soc.integration.soc_core import *
 
+from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
 from litex.soc.cores.clock import *
 
@@ -180,7 +180,7 @@ top dut (
     .com_mosi(mosi),
     .com_miso(miso),
     .com_csn(csn),
-    
+
     .slave_sclk(sclk),
     .slave_mosi(mosi),
     .slave_miso(miso),
@@ -192,7 +192,7 @@ top dut (
 // initial value = 16'ha503;
 // always @(posedge sclk) begin
 //    miso <= value[15];
-//    value <= {value[14:0],value[15]};    
+//    value <= {value[14:0],value[15]};
 // end
 
 endmodule""")
@@ -209,7 +209,7 @@ def run_sim(gui=False):
         call_cmd = ""
     os.system(call_cmd + "cd run && cp gateware/*.init .")
     os.system(call_cmd + "cd run && cp gateware/*.v .")
-    os.system(call_cmd + "cd run && xvlog ../glbl.v")
+    os.system(call_cmd + "cd run && xvlog ../../glbl.v")
     os.system(call_cmd + "cd run && xvlog top.v -sv")
     os.system(call_cmd + "cd run && xvlog top_tb.v -sv ")
     os.system(call_cmd + "cd run && xvlog /home/bunnie/code/betrusted-soc/deps/litex/litex/soc/cores/cpu/vexriscv/verilog/VexRiscv.v")
