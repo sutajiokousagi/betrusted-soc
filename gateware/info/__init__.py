@@ -2,13 +2,14 @@
 Module for info embedded in the gateware / board.
 """
 
-from litex.build.generic_platform import ConstraintError
 from migen import *
+
+from litex.build.generic_platform import ConstraintError
 from litex.soc.interconnect.csr import *
+from litex.soc.cores import dna
+from litex.soc.cores import xadc
 
 from gateware.info import git
-from gateware.info import dna
-from gateware.info import xadc
 from gateware.info import platform as platform_info
 
 
