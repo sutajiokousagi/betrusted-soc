@@ -8,11 +8,11 @@ from litex.soc.interconnect.csr_eventmanager import *
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
 
 
-class RtlI2C(Module, AutoCSR, AutoDoc):
+class RTLI2C(Module, AutoCSR, AutoDoc):
     """Verilog RTL-based Portable I2C Core"""
     def __init__(self, platform, pads):
-        self.intro = ModuleDoc("""RtlI2C: A verilog RTL-based I2C core
-        RtlI2C is an RTL-based I2C core derived from the OpenCores I2C master IP.
+        self.intro = ModuleDoc("""RTLI2C: A verilog RTL-based I2C core
+        RTLI2C is an RTL-based I2C core derived from the OpenCores I2C master IP.
         """)
         self.sda = TSTriple(1)
         self.scl = TSTriple(1)
@@ -22,9 +22,9 @@ class RtlI2C(Module, AutoCSR, AutoDoc):
         ]
 
         platform.add_source(os.path.join("gateware", "timescale.v"))
-        platform.add_source(os.path.join("gateware", "i2c_master_defines.v"))
-        platform.add_source(os.path.join("gateware", "i2c_master_bit_ctrl.v"))
-        platform.add_source(os.path.join("gateware", "i2c_master_byte_ctrl.v"))
+        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_defines.v"))
+        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_bit_ctrl.v"))
+        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_byte_ctrl.v"))
 
         self.prescale = CSRStorage(16, reset=0xFFFF, name="prescale", description="""
         Prescaler value. Set to (module clock / (5 * I2C freq) - 1). Example: if module clock

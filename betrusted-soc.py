@@ -32,7 +32,7 @@ from gateware import sram_32
 from gateware import memlcd
 from gateware import spi
 from gateware import messible
-from gateware import rtl_i2c
+from gateware import i2c
 from gateware import ticktimer
 
 from gateware import spinor
@@ -516,7 +516,7 @@ class BaseSoC(SoCCore):
         self.platform.add_false_path_constraints(self.crg.cd_spi.clk, self.crg.cd_sys.clk)
 
         # add I2C interface
-        self.submodules.i2c = rtl_i2c.RtlI2C(platform, platform.request("i2c", 0))
+        self.submodules.i2c = i2c.RTLI2C(platform, platform.request("i2c", 0))
         self.add_csr("i2c")
         self.add_interrupt("i2c")
 
