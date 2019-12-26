@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import sys
+sys.path.append("../")
+sys.path.append("../../")
+
 import lxbuildenv_sim
 
 # This variable defines all the external programs that this module
@@ -8,7 +12,6 @@ import lxbuildenv_sim
 # programs.
 LX_DEPENDENCIES = ["riscv", "vivado"]
 
-import sys
 # print('\n'.join(sys.path))  # help with debugging PYTHONPATH issues
 
 from migen import *
