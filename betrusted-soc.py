@@ -539,7 +539,7 @@ class BaseSoC(SoCCore):
 
         # SPI flash controller
         spi_pads = platform.request("spiflash_1x")
-        self.submodules.spinor = spinor.SpiNor(platform, spi_pads, size=SPI_FLASH_SIZE)
+        self.submodules.spinor = spinor.SPINOR(platform, spi_pads, size=SPI_FLASH_SIZE)
         self.register_mem("spiflash", self.mem_map["spiflash"],
             self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
