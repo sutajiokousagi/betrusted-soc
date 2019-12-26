@@ -44,7 +44,7 @@ class Debounce(Module):
 class KeyScan(Module, AutoCSR, AutoDoc):
     def __init__(self, pads):
         rows_unsync = pads.row
-        cols = Signal(pads.col.nbits)
+        cols        = Signal(pads.col.nbits)
 
         for c in range(0, cols.nbits):
             cols_ts = TSTriple(1)
@@ -62,21 +62,25 @@ class KeyScan(Module, AutoCSR, AutoDoc):
         for r in range(0, rows.nbits):
             setattr(self, "row" + str(r) + "dat", CSRStatus(cols.nbits, name="row" + str(r) + "dat", description="""Column data for the given row"""))
 
-        settling=4  # 4 cycles to settle: 2 cycles for MultiReg stabilization + slop. Must be > 2, and a power of 2
+        settling = 4  # 4 cycles to settle: 2 cycles for MultiReg stabilization + slop. Must be > 2, and a power of 2
         colcount = Signal(max=(settling*cols.nbits+2))
 
         update_shadow = Signal()
-        reset_scan = Signal()
-        scan_done = Signal()
-        col_r = Signal(cols.nbits)
+        reset_scan    = Signal()
+        scan_done     = Signal()
+        col_r         = Signal(cols.nbits)
         scan_done_sys = Signal()
         self.specials += MultiReg(scan_done, scan_done_sys)
         for r in range(0, rows.nbits):
             row_scan = Signal(cols.nbits)
             # below is in sysclock domain; row_scan is guaranteed stable by state machine sequencing when scan_done gating is enabled
-            self.sync += If(scan_done_sys, getattr(self, "row" + str(r) + "dat").status.eq(row_scan))\
-                         .Else(getattr(self, "row" + str(r) + "dat").status.eq(getattr(self, "row" + str(r) + "dat").status))
-
+            self.sync += [
+                If(scan_done_sys,
+                    getattr(self, "row" + str(r) + "dat").status.eq(row_scan)
+                ).Else(
+                    getattr(self, "row" + str(r) + "dat").status.eq(getattr(self, "row" + str(r) + "dat").status)
+                )
+            ]
             self.sync.kbd += [
                 If(reset_scan,
                    row_scan.eq(0)
@@ -97,30 +101,19 @@ class KeyScan(Module, AutoCSR, AutoDoc):
 
         pending_key = Signal()
         self.sync.kbd += [
-            If(colcount == (settling*cols.nbits+2),
-               colcount.eq(0),
-            ).Else(
-                colcount.eq(colcount + 1),
-            ),
-
-            If(colcount == (settling*cols.nbits),
-               scan_done.eq(1),
-            ).Else(
-                scan_done.eq(0),
-            ),
-            If(colcount == (settling*cols.nbits+1),
-               update_shadow.eq(~pending_key),  # only update the shadow if the pending bit has been cleared (e.g., CPU has acknowledged it has fetched the current key state)
-            ).Else(
-               update_shadow.eq(0),
-            ),
-            If(colcount == (settling*cols.nbits+2),
-               reset_scan.eq(1),
-            ).Else(
-                reset_scan.eq(0)
-            )
+            colcount.eq(colcount + 1),
+            scan_done.eq(0),
+            update_shadow.eq(0),
+            reset_scan.eq(0),
+            If(colcount == (settling*cols.nbits+2), colcount.eq(0)),
+            If(colcount == (settling*cols.nbits), scan_done.eq(1)),
+            # Only update the shadow if the pending bit has been cleared (e.g., CPU has acknowledged
+            # it has fetched the current key state)
+            If(colcount == (settling*cols.nbits+1), update_shadow.eq(~pending_key)),
+            If(colcount == (settling*cols.nbits+2), reset_scan.eq(1)),
         ]
 
-        # drive the columns based on the colcount counter
+        # Drive the columns based on the colcount counter
         self.submodules.coldecoder = Decoder(cols.nbits)
         self.comb += [
             self.coldecoder.i.eq(colcount[log2_int(settling):]),
@@ -130,9 +123,9 @@ class KeyScan(Module, AutoCSR, AutoDoc):
         self.sync.kbd += col_r.eq(self.coldecoder.o)
 
         self.submodules.ev = EventManager()
-        self.ev.keypressed = EventSourcePulse() # rising edge triggered
+        self.ev.keypressed = EventSourcePulse() # Rising edge triggered
         self.ev.finalize()
-        # extract any changes just before the shadow takes its new values
+        # Extract any changes just before the shadow takes its new values
         rowdiff = Signal(rows.nbits)
         for r in range(0, rows.nbits):
             self.sync.kbd += [
@@ -142,21 +135,21 @@ class KeyScan(Module, AutoCSR, AutoDoc):
                     rowdiff[r].eq(rowdiff[r])
                 )
             ]
-        # fire an interrupt during the reset_scan phase. Delay by 2 cycles so that rowchange can pick up a new value
-        # before the "pending" bit is set.
-        kp_d = Signal()
+        # Fire an interrupt during the reset_scan phase. Delay by 2 cycles so that rowchange can pick
+        # up a new value before the "pending" bit is set.
+        kp_d  = Signal()
         kp_d2 = Signal()
-        kp_r = Signal()
+        kp_r  = Signal()
         kp_r2 = Signal()
-        self.sync.kbd += kp_d.eq( rowdiff != 0 )
-        self.sync.kbd += kp_d2.eq( kp_d )
-        self.sync += kp_r.eq( kp_d2 )
-        self.sync += kp_r2.eq( kp_r )
-        self.comb += self.ev.keypressed.trigger.eq( kp_r & ~kp_r2 )
+        self.sync.kbd += kp_d.eq(rowdiff != 0)
+        self.sync.kbd += kp_d2.eq(kp_d)
+        self.sync += kp_r.eq(kp_d2)
+        self.sync += kp_r2.eq(kp_r)
+        self.comb += self.ev.keypressed.trigger.eq(kp_r & ~kp_r2)
 
         self.rowchange = CSRStatus(rows.nbits, name="rowchange",
-                                   description="""The rows that changed at the point of interrupt generation.
-                                   Does not update again until the interrupt is serviced.""")
+            description="""The rows that changed at the point of interrupt generation.
+            Does not update again until the interrupt is serviced.""")
         reset_scan_sys = Signal()
         self.specials += MultiReg(reset_scan, reset_scan_sys)
         self.sync += [
@@ -166,5 +159,4 @@ class KeyScan(Module, AutoCSR, AutoDoc):
                 self.rowchange.status.eq(self.rowchange.status)
             )
         ]
-
         self.specials += MultiReg(self.ev.keypressed.pending, pending_key, "kbd")
