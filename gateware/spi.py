@@ -1,8 +1,9 @@
+from migen.genlib.cdc import MultiReg
+from migen.genlib.cdc import BlindTransfer
+
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
 from litex.soc.interconnect.csr_eventmanager import *
 
-from migen.genlib.cdc import MultiReg
-from migen.genlib.cdc import BlindTransfer
 
 class PulseStretch(Module):  # simple module to stretch a pulse out by 10 cycles to cross into the slower SPI domain
     def __init__(self):

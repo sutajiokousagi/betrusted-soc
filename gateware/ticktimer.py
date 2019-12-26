@@ -1,9 +1,10 @@
 from migen import *
+from migen.genlib.cdc import MultiReg
 
 from litex.soc.interconnect.csr import *
-from migen.genlib.cdc import MultiReg
 from litex.soc.interconnect.csr_eventmanager import *
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
+
 
 class TickTimer(Module, AutoCSR, AutoDoc):
     """Millisecond timer"""

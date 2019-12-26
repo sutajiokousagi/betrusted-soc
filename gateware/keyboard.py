@@ -1,8 +1,8 @@
-from litex.soc.integration.doc import AutoDoc, ModuleDoc
-from litex.soc.interconnect.csr_eventmanager import *
-
 from migen.genlib.cdc import MultiReg
 from migen.genlib.coding import Decoder
+
+from litex.soc.integration.doc import AutoDoc, ModuleDoc
+from litex.soc.interconnect.csr_eventmanager import *
 
 # Relies on a clock called "kbd" for delay counting
 # Input and output through "i" and "o" signals respectively
@@ -158,7 +158,7 @@ class KeyScan(Module, AutoCSR, AutoDoc):
         self.comb += self.ev.keypressed.trigger.eq( kp_r & ~kp_r2 )
 
         self.rowchange = CSRStatus(rows.nbits, name="rowchange",
-                                   description="""The rows that changed at the point of interrupt generation. 
+                                   description="""The rows that changed at the point of interrupt generation.
                                    Does not update again until the interrupt is serviced.""")
         reset_scan_sys = Signal()
         self.specials += MultiReg(reset_scan, reset_scan_sys)

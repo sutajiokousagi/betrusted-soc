@@ -1,7 +1,8 @@
-from litex.soc.integration.doc import AutoDoc, ModuleDoc
+from litex.build.xilinx.vivado import XilinxVivadoToolchain
 from litex.soc.interconnect.csr_eventmanager import *
 from litex.soc.interconnect import wishbone
-from litex.build.xilinx.vivado import XilinxVivadoToolchain
+from litex.soc.integration.doc import AutoDoc, ModuleDoc
+
 
 class SpiNor(Module, AutoCSR):
     def __init__(self, platform, pads, size=2*1024*1024):

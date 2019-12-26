@@ -4,6 +4,7 @@ from migen.genlib.fsm import FSM, NextState
 from litex.soc.interconnect import wishbone
 from litex.soc.interconnect.csr import *
 
+
 class Sram32(Module, AutoCSR):
     def __init__(self, pads, rd_timing, wr_timing, page_rd_timing):
         self.bus = wishbone.Interface()

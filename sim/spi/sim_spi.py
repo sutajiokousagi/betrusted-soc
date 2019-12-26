@@ -15,8 +15,8 @@ from migen import *
 
 from litex.build.generic_platform import *
 from litex.build.xilinx import XilinxPlatform
-from litex.soc.integration.soc_core import *
 
+from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
 from litex.soc.cores.clock import *
 
