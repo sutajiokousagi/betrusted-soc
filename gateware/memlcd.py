@@ -7,9 +7,9 @@ from litex.soc.interconnect.csr_eventmanager import *
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
 
 
-class Memlcd(Module, AutoCSR):
+class MemLCD(Module, AutoCSR):
     def __init__(self, pads):
-        self.background = ModuleDoc("""Memlcd: Driver for the SHARP Memory LCD model LS032B7DD02
+        self.background = ModuleDoc("""MemLCD: Driver for the SHARP Memory LCD model LS032B7DD02
 
         The LS032B7DD02 is a 336x536 pixel black and white memory LCD, with a 200ppi dot pitch.
         Memory LCDs can be thought of as 'fast E-ink displays that consume a tiny bit of standby
@@ -106,14 +106,14 @@ class Memlcd(Module, AutoCSR):
         * Operating temperature is -20 to 70C, storage temperature -30 to 80C.
         """)
 
-        self.interface = ModuleDoc("""Wishbone interface for Memlcd
+        self.interface = ModuleDoc("""Wishbone interface for MemLCD
 
-        Memlcd maintains a local framebuffer for the LCD. The CPU can read and write
+        MemLCD maintains a local framebuffer for the LCD. The CPU can read and write
         to the frame buffer to update pixel data, and then request a screen update to
         commit the frame buffer to the LCD.
 
         Only full lines can be updated on a memory LCD; partial updates are not possible.
-        In order to optimize the update process, Memlcd maintains a "dirty bit" associated
+        In order to optimize the update process, MemLCD maintains a "dirty bit" associated
         with each line. Only lines with modified pixels are written to the screen after an
         update request.
 
@@ -121,8 +121,8 @@ class Memlcd(Module, AutoCSR):
         44 bytes (0x2C, or 352 bits). In order to simplify math, the frame buffer rounds
         the line width up to the nearest power of two, or 64 bytes.
 
-        The unused bits can be used as a "hint" to the Memlcd block as to which lines
-        require updating. If the unused bits have any value other than 0, the Memlcd block
+        The unused bits can be used as a "hint" to the MemLCD block as to which lines
+        require updating. If the unused bits have any value other than 0, the MemLCD block
         will update those lines when an "UpdateDirty" command is triggered. It is up
         to the CPU to set and clear the dirty bits, they are not automatically cleared
         by the block upon update. Typically the clearing of the bits would be handled

@@ -109,7 +109,7 @@ class SimpleSim(SoCCore):
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
 
         # LCD interface
-        self.submodules.memlcd = memlcd.Memlcd(platform.request("lcd"))
+        self.submodules.memlcd = memlcd.MemLCD(platform.request("lcd"))
         self.add_csr("memlcd")
         self.register_mem("memlcd", self.mem_map["memlcd"], self.memlcd.bus, size=self.memlcd.fb_depth*4)
 

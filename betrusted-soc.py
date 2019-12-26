@@ -495,7 +495,7 @@ class BaseSoC(SoCCore):
         self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins sram_ext_sync_oe_n_reg/Q]")
 
         # LCD interface
-        self.submodules.memlcd = memlcd.Memlcd(platform.request("lcd"))
+        self.submodules.memlcd = memlcd.MemLCD(platform.request("lcd"))
         self.add_csr("memlcd")
         self.register_mem("memlcd", self.mem_map["memlcd"], self.memlcd.bus, size=self.memlcd.fb_depth*4)
 
