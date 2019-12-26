@@ -192,7 +192,7 @@ def run_sim(gui=False):
         call_cmd = ""
     os.system(call_cmd + "cd run && cp gateware/*.init .")
     os.system(call_cmd + "cd run && cp gateware/*.v .")
-    os.system(call_cmd + "cd run && xvlog ../glbl.v")
+    os.system(call_cmd + "cd run && xvlog ../../glbl.v")
     os.system(call_cmd + "cd run && xvlog top.v -sv")
     os.system(call_cmd + "cd run && xvlog top_tb.v -sv ")
     os.system(call_cmd + "cd run && xvlog /home/bunnie/code/betrusted-soc/deps/litex/litex/soc/cores/cpu/vexriscv/verilog/VexRiscv.v")
