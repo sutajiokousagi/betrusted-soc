@@ -21,19 +21,14 @@ class RTLI2C(Module, AutoCSR, AutoDoc):
             self.sda.get_tristate(pads.sda),
         ]
 
-        platform.add_source(os.path.join("gateware", "timescale.v"))
-        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_defines.v"))
-        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_bit_ctrl.v"))
-        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_byte_ctrl.v"))
-
         self.prescale = CSRStorage(16, reset=0xFFFF, name="prescale", description="""
         Prescaler value. Set to (module clock / (5 * I2C freq) - 1). Example: if module clock
         is equal to sysclk; syclk is 100MHz; and I2C freq is 100kHz, then prescaler
         is (100MHz / (5 * 100kHz) - 1) = 199. Reset value: 0xFFFF""")
         self.control = CSRStorage(fields=[
             CSRField("Resvd", size=6, description="Reserved (for cross-compatibility with OpenCores drivers)"),
-            CSRField("IEN", description="When set to `1`, interrupts are enabled."),
-            CSRField("EN", description="When set to `1`, the core is enabled."),
+            CSRField("IEN",   size=1, description="When set to `1`, interrupts are enabled."),
+            CSRField("EN",    size=1, description="When set to `1`, the core is enabled."),
         ])
         self.txr = CSRStorage(8, name="txr", description="""
         Next byte to transmit to slave devices. LSB indicates R/W during address phases,
@@ -41,29 +36,29 @@ class RTLI2C(Module, AutoCSR, AutoDoc):
         self.rxr = CSRStatus(8, name="rxr", description="""
         Data being read from slaved devices""")
         self.command = CSRStorage(write_from_dev=True, fields=[
-            CSRField("IACK", description="Interrupt acknowledge; when set, clears a pending interrupt"),
+            CSRField("IACK",  size=1, description="Interrupt acknowledge; when set, clears a pending interrupt"),
             CSRField("Resvd", size=2, description="reserved for cross-compatibility with OpenCores drivers"),
-            CSRField("ACK", description="when a receiver, sent ack (`ACK=0`) or nack (`ACK=1`)"),
-            CSRField("WR", description="write to slave"),
-            CSRField("RD", description="read from slave"),
-            CSRField("STO", description="generate stop condition"),
-            CSRField("STA", description="generate (repeated) start condition"),
+            CSRField("ACK",   size=1, description="when a receiver, sent ack (`ACK=0`) or nack (`ACK=1`)"),
+            CSRField("WR",    size=1, description="write to slave"),
+            CSRField("RD",    size=1, description="read from slave"),
+            CSRField("STO",   size=1, description="generate stop condition"),
+            CSRField("STA",   size=1, description="generate (repeated) start condition"),
         ])
         self.status = CSRStatus(8, fields=[
-            CSRField("IF", description="Interrupt flag, This bit is set when an interrupt is pending, which will cause a processor interrupt request if the IEN bit is set. The Interrupt Flag is set upon the completion of one byte of data transfer."),
-            CSRField("TIP", description="transfer in progress"),
-            CSRField("Resvd", size=3, description="reserved for cross-compatibility with OpenCores drivers"),
-            CSRField("ArbLost", description="Set when arbitration for the bus is lost"),
-            CSRField("Busy", description="I2C block is busy processing the latest command"),
-            CSRField("RxACK", description="Received acknowledge from slave. 1 = no ack received, 0 = ack received"),
+            CSRField("IF",      size=1, description="Interrupt flag, This bit is set when an interrupt is pending, which will cause a processor interrupt request if the IEN bit is set. The Interrupt Flag is set upon the completion of one byte of data transfer."),
+            CSRField("TIP",     size=1, description="transfer in progress"),
+            CSRField("Resvd",   size=3, description="reserved for cross-compatibility with OpenCores drivers"),
+            CSRField("ArbLost", size=1, description="Set when arbitration for the bus is lost"),
+            CSRField("Busy",    size=1, description="I2C block is busy processing the latest command"),
+            CSRField("RxACK",   size=1, description="Received acknowledge from slave. 1 = no ack received, 0 = ack received"),
         ])
 
         self.submodules.ev = EventManager()
-        self.ev.i2c_int = EventSourcePulse()  # rising edge triggered
+        self.ev.i2c_int    = EventSourcePulse()  # rising edge triggered
         self.ev.finalize()
 
         # control register
-        ena = Signal()
+        ena     = Signal()
         int_ena = Signal()
         self.comb += [
             ena.eq(self.control.fields.EN),
@@ -72,10 +67,10 @@ class RTLI2C(Module, AutoCSR, AutoDoc):
 
         # command register
         start = Signal()
-        stop = Signal()
-        ack = Signal()
-        iack = Signal()
-        read = Signal()
+        stop  = Signal()
+        ack   = Signal()
+        iack  = Signal()
+        read  = Signal()
         write = Signal()
         self.comb += [
             start.eq(self.command.fields.STA),
@@ -87,11 +82,11 @@ class RTLI2C(Module, AutoCSR, AutoDoc):
         ],
 
         # status register
-        rxack = Signal()
-        busy = Signal()
+        rxack    = Signal()
+        busy     = Signal()
         arb_lost = Signal()
-        tip = Signal()
-        intflag = Signal()
+        tip      = Signal()
+        intflag  = Signal()
         self.comb += [
             self.status.fields.RxACK.eq(rxack),
             self.status.fields.Busy.eq(busy),
@@ -100,41 +95,42 @@ class RTLI2C(Module, AutoCSR, AutoDoc):
             self.status.fields.IF.eq(intflag)
         ]
 
-
-        done = Signal()
-        i2c_al = Signal()
-        scl_i = Signal()
-        scl_o = Signal()
+        done    = Signal()
+        i2c_al  = Signal()
+        scl_i   = Signal()
+        scl_o   = Signal()
         scl_oen = Signal()
-        sda_i = Signal()
-        sda_o = Signal()
+        sda_i   = Signal()
+        sda_o   = Signal()
         sda_oen = Signal()
-        self.specials += [
-            Instance("i2c_master_byte_ctrl",
-                     i_clk=ClockSignal(),
-                     i_rst=ResetSignal(),
-                     i_nReset=1,
-                     i_ena=ena,
-                     i_clk_cnt=self.prescale.storage,
-                     i_start=start,
-                     i_stop=stop & ~done,
-                     i_read=read & ~done,
-                     i_write=write & ~done,
-                     i_ack_in=ack,
-                     i_din=self.txr.storage,
-                     o_cmd_ack=done,  # this is a one-cycle wide pulse
-                     o_ack_out=rxack,
-                     o_dout=self.rxr.status,
-                     o_i2c_busy=busy,
-                     o_i2c_al=i2c_al,
-                     i_scl_i=scl_i,
-                     o_scl_o=scl_o,
-                     o_scl_oen=scl_oen,
-                     i_sda_i=sda_i,
-                     o_sda_o=sda_o,
-                     o_sda_oen=sda_oen,
-                     )
-        ]
+        self.specials += Instance("i2c_master_byte_ctrl",
+            i_clk      = ClockSignal(),
+            i_rst      = ResetSignal(),
+            i_nReset   = 1,
+            i_ena      = ena,
+            i_clk_cnt  = self.prescale.storage,
+            i_start    = start,
+            i_stop     = stop & ~done,
+            i_read     = read & ~done,
+            i_write    = write & ~done,
+            i_ack_in   = ack,
+            i_din      = self.txr.storage,
+            o_cmd_ack  = done,  # this is a one-cycle wide pulse
+            o_ack_out  = rxack,
+            o_dout     = self.rxr.status,
+            o_i2c_busy = busy,
+            o_i2c_al   = i2c_al,
+            i_scl_i    = scl_i,
+            o_scl_o    = scl_o,
+            o_scl_oen  = scl_oen,
+            i_sda_i    = sda_i,
+            o_sda_o    = sda_o,
+            o_sda_oen  = sda_oen,
+        )
+        platform.add_source(os.path.join("gateware", "timescale.v"))
+        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_defines.v"))
+        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_bit_ctrl.v"))
+        platform.add_source(os.path.join("gateware", "i2c", "i2c_master_byte_ctrl.v"))
         self.comb += [
             sda_i.eq(self.sda.i),
             self.sda.o.eq(sda_o),
