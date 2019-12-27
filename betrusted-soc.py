@@ -39,6 +39,8 @@ from gateware import ticktimer
 from gateware import spinor
 from gateware import keyboard
 
+# IOs ----------------------------------------------------------------------------------------------
+
 _io = [
     ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),
 
@@ -193,6 +195,8 @@ _io_uart_debug_swapped = [
      ),
 ]
 
+# Platform -----------------------------------------------------------------------------------------
+
 class Platform(XilinxPlatform):
     def __init__(self, toolchain="vivado", programmer="vivado", part="50"):
         part = "xc7s" + part + "-csga324-1il"
@@ -227,6 +231,8 @@ class Platform(XilinxPlatform):
 
     def do_finalize(self, fragment):
         XilinxPlatform.do_finalize(self, fragment)
+
+# CRG ----------------------------------------------------------------------------------------------
 
 slow_clock = False
 
@@ -318,6 +324,7 @@ class CRG(Module, AutoCSR):
                           )
             ]
 
+# WarmBoot -----------------------------------------------------------------------------------------
 
 class WarmBoot(Module, AutoCSR):
     def __init__(self, parent, reset_vector=0):
@@ -327,6 +334,7 @@ class WarmBoot(Module, AutoCSR):
         # "Reset Key" is 0xac (0b101011xx)
         self.comb += self.do_reset.eq((self.ctrl.storage & 0xfc) == 0xac)
 
+# BtEvents -----------------------------------------------------------------------------------------
 
 class BtEvents(Module, AutoCSR, AutoDoc):
     def __init__(self, com, rtc):
@@ -342,6 +350,7 @@ class BtEvents(Module, AutoCSR, AutoDoc):
         self.comb += self.ev.com_int.trigger.eq(com_int)
         self.comb += self.ev.rtc_int.trigger.eq(rtc_int)
 
+# BtPower ------------------------------------------------------------------------------------------
 
 class BtPower(Module, AutoCSR, AutoDoc):
     def __init__(self, pads):
@@ -369,6 +378,7 @@ class BtPower(Module, AutoCSR, AutoDoc):
             pads.noise_on.eq(self.power.fields.noise),
         ]
 
+# BtGpio -------------------------------------------------------------------------------------------
 
 class BtGpio(Module, AutoDoc, AutoCSR):
     def __init__(self, pads):
@@ -411,6 +421,7 @@ class BtGpio(Module, AutoDoc, AutoCSR):
             self.comb += getattr(self.ev, "gpioint" + str(i)).trigger.eq(self.input.status[i] ^ self.intpol.status[i])
             # note that if you change the polarity on the interrupt it could trigger an interrupt
 
+# BtSeed -------------------------------------------------------------------------------------------
 
 class BtSeed(Module, AutoDoc, AutoCSR):
     def __init__(self, reproduceable=False):
@@ -426,62 +437,66 @@ class BtSeed(Module, AutoDoc, AutoCSR):
         self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset=seed_reset)
 
 
-boot_offset = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
-bios_size = 0x8000
+# BtSeed -------------------------------------------------------------------------------------------
+
+boot_offset    = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
+bios_size      = 0x8000
 # 128 MB (1024 Mb), but reduce to 64Mbit for bring-up because we don't have extended page addressing implemented yet
 SPI_FLASH_SIZE = 16 * 1024 * 1024
 
-class BaseSoC(SoCCore):
-    # addresses starting with 0xB, 0xE, and 0xF are I/O and not cacheable
+# BetrustedSoC -------------------------------------------------------------------------------------
+
+class BetrustedSoC(SoCCore):
+    # I/O range: 0x80000000-0xfffffffff (not cacheable)
     SoCCore.mem_map = {
-        "rom": 0x00000000, # required to keep litex happy
-        "sram": 0x10000000,
+        "rom":      0x00000000, # required to keep litex happy
+        "sram":     0x10000000,
         "spiflash": 0x20000000,
         "sram_ext": 0x40000000,
-        "memlcd": 0xB0000000,
-        "csr": 0xF0000000,
+        "memlcd":   0xb0000000,
+        "csr":      0xf0000000,
     }
 
     def __init__(self, platform, spiflash="spiflash_1x", **kwargs):
-        if slow_clock:
-            clk_freq = int(12e6)
-        else:
-            clk_freq = int(100e6)
+        sys_clk_freq = int(100e6) if not slow_clock else int(12e6)
 
         # CPU cluster
         ## For dev work, we're booting from SPI directly. However, for enhanced security
-        ## we will eventually want to move to a bitstream-ROM based bootloder that does
+        ## we will eventually want to move to a bitstream-ROM based bootloader that does
         ## a signature verification of the external SPI code before running it. The theory is that
         ## a user will burn a random AES key into their FPGA and encrypt their bitstream to their
         ## unique AES key, creating a root of trust that offers a defense against trivial patch attacks.
-        SoCCore.__init__(self, platform, clk_freq,
-                         integrated_rom_size=0,
-                         integrated_sram_size=0x20000,
-                         ident="betrusted.io LiteX Base SoC",
-                         cpu_type="vexriscv",
-#                         cpu_variant="linux+debug",  # this core doesn't work, but left for jogging my memory later on if I need to try it
-                         **kwargs)
+
+        # SoCCore ----------------------------------------------------------------------------------
+        SoCCore.__init__(self, platform, sys_clk_freq,
+            integrated_rom_size  = 0,
+            integrated_sram_size = 0x20000,
+            ident                = "betrusted.io LiteX Base SoC",
+            cpu_type             = "vexriscv",
+            #cpu_variant="linux+debug",  # this core doesn't work, but left for jogging my memory later on if I need to try it
+            **kwargs)
+
+        # CPU --------------------------------------------------------------------------------------
         self.cpu.use_external_variant("gateware/cpu/VexRiscv_BetrustedSoC_Debug.v")
         self.cpu.add_debug()
         self.add_memory_region("rom", 0, 0) # Required to keep litex happy
-        kwargs['cpu_reset_address']=self.mem_map["spiflash"]+boot_offset
-        self.submodules.reboot = WarmBoot(self, reset_vector=kwargs['cpu_reset_address'])
+        kwargs["cpu_reset_address"] = self.mem_map["spiflash"]+boot_offset
+        self.submodules.reboot = WarmBoot(self, reset_vector=kwargs["cpu_reset_address"])
         self.add_csr("reboot")
         warm_reset = Signal()
         self.comb += warm_reset.eq(self.reboot.do_reset)
-        self.cpu.cpu_params.update(
-            i_externalResetVector=self.reboot.addr.storage,
-        )
-        # Debug cluster
+        self.cpu.cpu_params.update(i_externalResetVector=self.reboot.addr.storage)
+
+        # Debug cluster ----------------------------------------------------------------------------
         from litex.soc.cores.uart import UARTWishboneBridge
-        self.submodules.uart_bridge = UARTWishboneBridge(platform.request("debug"), clk_freq, baudrate=115200)
+        self.submodules.uart_bridge = UARTWishboneBridge(platform.request("debug"), sys_clk_freq, baudrate=115200)
         self.add_wb_master(self.uart_bridge.wishbone)
         self.register_mem("vexriscv_debug", 0xe00f0000, self.cpu.debug_bus, 0x100)
 
-        # clockgen cluster
+        # Clockgen cluster -------------------------------------------------------------------------
         self.submodules.crg = CRG(platform)
         self.add_csr("crg")
-        self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/clk_freq)
+        self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/sys_clk_freq)
         self.comb += self.crg.warm_reset.eq(warm_reset)
         self.platform.add_platform_command(
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
@@ -495,18 +510,18 @@ class BaseSoC(SoCCore):
             "create_generated_clock -name sys_clk -source [get_pins MMCME2_ADV/CLKIN1] -multiply_by 50 -divide_by 6 -add -master_clock clk12 [get_pins MMCME2_ADV/CLKOUT0]"
         )
 
+        # Info -------------------------------------------------------------------------------------
         self.submodules.info = info.Info(platform, self.__class__.__name__)
         self.add_csr("info")
         self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{info_dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
 
-        # external SRAM
+        # External SRAM ----------------------------------------------------------------------------
         # Note that page_rd_timing=2 works, but is a slight overclock on RAM. Cache fill time goes from 436ns to 368ns for 8 words.
         self.submodules.sram_ext = sram_32.SRAM32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=3)  # this works with 2:nbits page length with Rust firmware...
         #self.submodules.sram_ext = sram_32.SRAM32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=5)  # this worked with 3:nbits page length in C firmware
         self.add_csr("sram_ext")
-        self.register_mem("sram_ext", self.mem_map["sram_ext"],
-                  self.sram_ext.bus, size=0x1000000)
-        # constraint so a total of one extra clock period is consumed in routing delays (split 5/5 evenly on in and out)
+        self.register_mem("sram_ext", self.mem_map["sram_ext"], self.sram_ext.bus, size=0x1000000)
+        # Constraint so a total of one extra clock period is consumed in routing delays (split 5/5 evenly on in and out)
         self.platform.add_platform_command("set_input_delay -clock [get_clocks sys_clk] -min -add_delay 5.0 [get_ports {{sram_d[*]}}]")
         self.platform.add_platform_command("set_input_delay -clock [get_clocks sys_clk] -max -add_delay 5.0 [get_ports {{sram_d[*]}}]")
         self.platform.add_platform_command("set_output_delay -clock [get_clocks sys_clk] -min -add_delay 0.0 [get_ports {{sram_adr[*] sram_d[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
@@ -523,12 +538,12 @@ class BaseSoC(SoCCore):
         self.platform.add_platform_command("set_multicycle_path 2 -setup -through [get_pins sram_ext_sync_oe_n_reg/Q]")
         self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins sram_ext_sync_oe_n_reg/Q]")
 
-        # LCD interface
+        # LCD interface ----------------------------------------------------------------------------
         self.submodules.memlcd = memlcd.MemLCD(platform.request("lcd"))
         self.add_csr("memlcd")
         self.register_mem("memlcd", self.mem_map["memlcd"], self.memlcd.bus, size=self.memlcd.fb_depth*4)
 
-        # COM SPI interface
+        # COM SPI interface ------------------------------------------------------------------------
         self.submodules.com = spi.SPIMaster(platform.request("com"))
         self.add_csr("com")
         # 20.83ns = 1/2 of 24MHz clock, we are doing falling-to-rising timing
@@ -544,46 +559,45 @@ class BaseSoC(SoCCore):
         self.platform.add_false_path_constraints(self.crg.cd_sys.clk, self.crg.cd_spi.clk)
         self.platform.add_false_path_constraints(self.crg.cd_spi.clk, self.crg.cd_sys.clk)
 
-        # add I2C interface
+        # I2C interface ----------------------------------------------------------------------------
         self.submodules.i2c = i2c.RTLI2C(platform, platform.request("i2c", 0))
         self.add_csr("i2c")
         self.add_interrupt("i2c")
 
-        # event generation for I2C and COM
+        # Event generation for I2C and COM ---------------------------------------------------------
         self.submodules.btevents = BtEvents(platform.request("com_irq", 0), platform.request("rtc_irq", 0))
         self.add_csr("btevents")
         self.add_interrupt("btevents")
 
-        # add messible for debug
+        # Messible for debug -----------------------------------------------------------------------
         self.submodules.messible = messible.Messible()
         self.add_csr("messible")
 
-        # Tick timer
-        self.submodules.ticktimer = ticktimer.TickTimer(clk_freq / 1000)
+        # Tick timer -------------------------------------------------------------------------------
+        self.submodules.ticktimer = ticktimer.TickTimer(sys_clk_freq/1000)
         self.add_csr("ticktimer")
 
-        # Power control pins
+        # Power control pins -----------------------------------------------------------------------
         self.submodules.power = BtPower(platform.request("power"))
         self.add_csr("power")
 
-        # SPI flash controller
+        # SPI flash controller ---------------------------------------------------------------------
         spi_pads = platform.request("spiflash_1x")
         self.submodules.spinor = spinor.SPINOR(platform, spi_pads, size=SPI_FLASH_SIZE)
-        self.register_mem("spiflash", self.mem_map["spiflash"],
-            self.spinor.bus, size=SPI_FLASH_SIZE)
+        self.register_mem("spiflash", self.mem_map["spiflash"], self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
 
-        # Keyboard module
+        # Keyboard module --------------------------------------------------------------------------
         self.submodules.keyboard = ClockDomainsRenamer(cd_remapping={"kbd":"lpclk"})(keyboard.KeyScan(platform.request("kbd")))
         self.add_csr("keyboard")
         self.add_interrupt("keyboard")
 
-        # GPIO module
+        # GPIO module ------------------------------------------------------------------------------
         self.submodules.gpio = BtGpio(platform.request("gpio"))
         self.add_csr("gpio")
         self.add_interrupt("gpio")
 
-        # Build seed
+        # Build seed -------------------------------------------------------------------------------
         self.submodules.seed = BtSeed()
         self.add_csr("seed")
 
@@ -609,6 +623,7 @@ class BaseSoC(SoCCore):
 
 """
 
+# Build --------------------------------------------------------------------------------------------
 
 def main():
     global _io
@@ -638,7 +653,7 @@ def main():
         platform.add_extension(_io_uart_debug_swapped)
     else:
         platform.add_extension(_io_uart_debug)
-    soc = BaseSoC(platform)
+    soc = BetrustedSoC(platform)
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv", compile_software=compile_software, compile_gateware=compile_gateware)
     vns = builder.build()
     soc.do_exit(vns)
