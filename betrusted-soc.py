@@ -318,22 +318,21 @@ class CRG(Module, AutoCSR):
                           )
             ]
 
+
 class WarmBoot(Module, AutoCSR):
     def __init__(self, parent, reset_vector=0):
         self.ctrl = CSRStorage(size=8)
         self.addr = CSRStorage(size=32, reset=reset_vector)
         self.do_reset = Signal()
-        self.comb += [
-            # "Reset Key" is 0xac (0b101011xx)
-            self.do_reset.eq(self.ctrl.storage[2] & self.ctrl.storage[3] & ~self.ctrl.storage[4]
-                      & self.ctrl.storage[5] & ~self.ctrl.storage[6] & self.ctrl.storage[7])
-        ]
+        # "Reset Key" is 0xac (0b101011xx)
+        self.comb += self.do_reset.eq((self.ctrl.storage & 0xfc) == 0xac)
+
 
 class BtEvents(Module, AutoCSR, AutoDoc):
     def __init__(self, com, rtc):
         self.submodules.ev = EventManager()
-        self.ev.com_int = EventSourcePulse()  # rising edge triggered
-        self.ev.rtc_int = EventSourceProcess() # falling edge triggered
+        self.ev.com_int    = EventSourcePulse()   # rising edge triggered
+        self.ev.rtc_int    = EventSourceProcess() # falling edge triggered
         self.ev.finalize()
 
         com_int = Signal()
@@ -343,37 +342,41 @@ class BtEvents(Module, AutoCSR, AutoDoc):
         self.comb += self.ev.com_int.trigger.eq(com_int)
         self.comb += self.ev.rtc_int.trigger.eq(rtc_int)
 
+
 class BtPower(Module, AutoCSR, AutoDoc):
     def __init__(self, pads):
         self.intro = ModuleDoc("""BtPower - power control pins
         """)
 
         self.power = CSRStorage(8, fields=[
-            CSRField("audio", description="Write `1` to power on the audio subsystem"),
-            CSRField("self", description="Writing `1` forces self power-on (overrides the EC's ability to power me down)", reset=1),
-            CSRField("ec_snoop", description="Writing `1` allows the insecure EC to snoop a couple keyboard pads for wakeup key sequence recognition"),
-            CSRField("state", size=2, description="Current SoC power state. 0x=off or not ready, 10=on and safe to shutdown, 11=on and not safe to shut down, resets to 01 to allow extSRAM access immediately during init", reset=1),
-            CSRField("noisebias", description="Writing `1` enables the primary bias supply for the noise generator"),
-            CSRField("noise", size=2, description="Controls which of two noise channels are active; all combos valid. noisebias must be on first.")
+            CSRField("audio",     size=1, description="Write `1` to power on the audio subsystem"),
+            CSRField("self",      size=1, description="Writing `1` forces self power-on (overrides the EC's ability to power me down)", reset=1),
+            CSRField("ec_snoop",  size=1, description="Writing `1` allows the insecure EC to snoop a couple keyboard pads for wakeup key sequence recognition"),
+            CSRField("state",     size=2, description="Current SoC power state. 0x=off or not ready, 10=on and safe to shutdown, 11=on and not safe to shut down, resets to 01 to allow extSRAM access immediately during init", reset=1),
+            CSRField("noisebias", size=1, description="Writing `1` enables the primary bias supply for the noise generator"),
+            CSRField("noise",     size=2, description="Controls which of two noise channels are active; all combos valid. noisebias must be on first.")
         ])
 
         self.comb += [
             pads.audio_on.eq(self.power.fields.audio),
             pads.fpga_sys_on.eq(self.power.fields.self),
-            pads.allow_up5k_n.eq(~self.power.fields.ec_snoop), # this signal automatically enables snoop when SoC is powered down
-            pads.pwr_s0.eq(self.power.fields.state[0] & ~ResetSignal()),  # ensure SRAM isolation during reset (CE & ZZ = 1 by pull-ups)
+            # This signal automatically enables snoop when SoC is powered down
+            pads.allow_up5k_n.eq(~self.power.fields.ec_snoop),
+            # Ensure SRAM isolation during reset (CE & ZZ = 1 by pull-ups)
+            pads.pwr_s0.eq(self.power.fields.state[0] & ~ResetSignal()),
             pads.pwr_s1.eq(self.power.fields.state[1]),
             pads.noisebias_on.eq(self.power.fields.noisebias),
             pads.noise_on.eq(self.power.fields.noise),
         ]
 
+
 class BtGpio(Module, AutoDoc, AutoCSR):
     def __init__(self, pads):
         self.intro = ModuleDoc("""BtGpio - GPIO interface for betrusted""")
 
-        gpio_in = Signal(pads.nbits)
+        gpio_in  = Signal(pads.nbits)
         gpio_out = Signal(pads.nbits)
-        gpio_oe = Signal(pads.nbits)
+        gpio_oe  = Signal(pads.nbits)
 
         for g in range(0, pads.nbits):
             gpio_ts = TSTriple(1)
@@ -385,10 +388,10 @@ class BtGpio(Module, AutoDoc, AutoCSR):
             ]
 
         self.output = CSRStorage(pads.nbits, name="output", description="Values to appear on GPIO when respective `drive` bit is asserted")
-        self.input = CSRStatus(pads.nbits, name="input", description="Value measured on the respective GPIO pin")
-        self.drive = CSRStorage(pads.nbits, name="drive", description="When a bit is set to `1`, the respective pad drives its value out")
-        self.intena = CSRStatus(pads.nbits, name="intena", description="Enable interrupts when a respective bit is set")
-        self.intpol = CSRStatus(pads.nbits, name="intpol", description="When a bit is `1`, falling-edges cause interrupts. Otherwise, rising edges cause interrupts.")
+        self.input  = CSRStatus(pads.nbits,  name="input",  description="Value measured on the respective GPIO pin")
+        self.drive  = CSRStorage(pads.nbits, name="drive",  description="When a bit is set to `1`, the respective pad drives its value out")
+        self.intena = CSRStatus(pads.nbits,  name="intena", description="Enable interrupts when a respective bit is set")
+        self.intpol = CSRStatus(pads.nbits,  name="intpol", description="When a bit is `1`, falling-edges cause interrupts. Otherwise, rising edges cause interrupts.")
 
         self.specials += MultiReg(gpio_in, self.input.status)
         self.comb += [
@@ -408,6 +411,7 @@ class BtGpio(Module, AutoDoc, AutoCSR):
             self.comb += getattr(self.ev, "gpioint" + str(i)).trigger.eq(self.input.status[i] ^ self.intpol.status[i])
             # note that if you change the polarity on the interrupt it could trigger an interrupt
 
+
 class BtSeed(Module, AutoDoc, AutoCSR):
     def __init__(self, reproduceable=False):
         self.intro = ModuleDoc("""Place and route seed. Set to a fixed number for reproduceable builds.
@@ -419,8 +423,6 @@ class BtSeed(Module, AutoDoc, AutoCSR):
             self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset="4") # chosen by fair dice roll. guaranteed to be random.
         else:
             self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset=rng.getrandbits(64))
-
-
 
 
 boot_offset = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
