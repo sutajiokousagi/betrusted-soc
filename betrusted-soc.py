@@ -196,11 +196,10 @@ _io_uart_debug_swapped = [
 class Platform(XilinxPlatform):
     def __init__(self, toolchain="vivado", programmer="vivado", part="50"):
         part = "xc7s" + part + "-csga324-1il"
-        XilinxPlatform.__init__(self, part, _io,
-                                toolchain=toolchain)
+        XilinxPlatform.__init__(self, part, _io, toolchain=toolchain)
 
-        # NOTE: to do quad-SPI mode, the QE bit has to be set in the SPINOR status register
-        # OpenOCD won't do this natively, have to find a work-around (like using iMPACT to set it once)
+        # NOTE: to do quad-SPI mode, the QE bit has to be set in the SPINOR status register. OpenOCD
+        # won't do this natively, have to find a work-around (like using iMPACT to set it once)
         self.add_platform_command(
             "set_property CONFIG_VOLTAGE 1.8 [current_design]")
         self.add_platform_command(
@@ -224,8 +223,7 @@ class Platform(XilinxPlatform):
         if self.programmer == "vivado":
             return VivadoProgrammer(flash_part="n25q128-1.8v-spi-x1_x2_x4")
         else:
-            raise ValueError("{} programmer is not supported"
-                             .format(self.programmer))
+            raise ValueError("{} programmer is not supported".format(self.programmer))
 
     def do_finalize(self, fragment):
         XilinxPlatform.do_finalize(self, fragment)
@@ -237,80 +235,75 @@ class CRG(Module, AutoCSR):
         refclk_freq = 12e6
 
         clk12 = platform.request("clk12")
-        rst = Signal()
-        self.clock_domains.cd_sys = ClockDomain()
-        self.clock_domains.cd_spi = ClockDomain()
+        rst   = Signal()
+        self.clock_domains.cd_sys   = ClockDomain()
+        self.clock_domains.cd_spi   = ClockDomain()
         self.clock_domains.cd_lpclk = ClockDomain()
 
         clk32khz = platform.request("lpclk")
-        self.specials += [
-            Instance("BUFG", i_I=clk32khz, o_O=self.cd_lpclk.clk)
-        ]
+        self.specials += Instance("BUFG", i_I=clk32khz, o_O=self.cd_lpclk.clk)
 
         if slow_clock:
             self.specials += [
                 Instance("BUFG", i_I=clk12, o_O=self.cd_sys.clk),
-                AsyncResetSynchronizer(self.cd_sys, rst),
+                AsyncResetSynchronizer(self.cd_sys, rst)
             ]
-
         else:
             # DRP
-            self._mmcm_read = CSR()
+            self._mmcm_read  = CSR()
             self._mmcm_write = CSR()
-            self._mmcm_drdy = CSRStatus()
-            self._mmcm_adr = CSRStorage(7)
+            self._mmcm_drdy  = CSRStatus()
+            self._mmcm_adr   = CSRStorage(7)
             self._mmcm_dat_w = CSRStorage(16)
             self._mmcm_dat_r = CSRStatus(16)
 
-            pll_locked = Signal()
-            pll_fb = Signal()
-            pll_sys = Signal()
-            pll_spiclk = Signal()
+            pll_locked    = Signal()
+            pll_fb        = Signal()
+            pll_fb_bufg   = Signal()
+            pll_sys       = Signal()
+            pll_spiclk    = Signal()
             clk12_distbuf = Signal()
+            mmcm_drdy     = Signal()
 
-            self.specials += [
-                Instance("BUFG", i_I=clk12, o_O=clk12_distbuf),
-                # this allows PLLs/MMCMEs to be placed anywhere and reference the input clock
-            ]
+            # This allows PLLs/MMCMEs to be placed anywhere and reference the input clock
+            self.specials += Instance("BUFG", i_I=clk12, o_O=clk12_distbuf),
 
-            pll_fb_bufg = Signal()
-            mmcm_drdy = Signal()
             self.warm_reset = Signal()
             self.specials += [
                 Instance("MMCME2_ADV",
-                         p_STARTUP_WAIT="FALSE", o_LOCKED=pll_locked,
-                         p_BANDWIDTH="OPTIMIZED",
+                    p_STARTUP_WAIT="FALSE", o_LOCKED=pll_locked,
+                    p_BANDWIDTH="OPTIMIZED",
 
-                         # VCO @ 600MHz  (600-1200 range for -1LI)
-                         p_REF_JITTER1=0.01, p_CLKIN1_PERIOD=(1 / refclk_freq) * 1e9,
-                         p_CLKFBOUT_MULT_F=50.0, p_DIVCLK_DIVIDE=1,
-                         i_CLKIN1=clk12_distbuf, i_CLKFBIN=pll_fb_bufg, o_CLKFBOUT=pll_fb,
+                    # VCO @ 600MHz  (600-1200 range for -1LI)
+                    p_REF_JITTER1=0.01, p_CLKIN1_PERIOD=1e9/12e6,
+                    p_CLKFBOUT_MULT_F=50.0, p_DIVCLK_DIVIDE=1,
+                    i_CLKIN1=clk12_distbuf, i_CLKFBIN=pll_fb_bufg, o_CLKFBOUT=pll_fb,
 
-                         # 100 MHz - sysclk
-                         p_CLKOUT0_DIVIDE_F=6.0, p_CLKOUT0_PHASE=0.0,
-                         o_CLKOUT0=pll_sys,
+                    # 100 MHz - sysclk
+                    p_CLKOUT0_DIVIDE_F=6.0, p_CLKOUT0_PHASE=0.0,
+                    o_CLKOUT0=pll_sys,
 
-                         # 20 MHz - spiclk
-                         p_CLKOUT1_DIVIDE=30, p_CLKOUT1_PHASE=0,
-                         o_CLKOUT1=pll_spiclk,
+                    # 20 MHz - spiclk
+                    p_CLKOUT1_DIVIDE=30, p_CLKOUT1_PHASE=0,
+                    o_CLKOUT1=pll_spiclk,
 
-                         # DRP
-                         i_DCLK=ClockSignal(),
-                         i_DWE=self._mmcm_write.re,
-                         i_DEN=self._mmcm_read.re | self._mmcm_write.re,
-                         o_DRDY=mmcm_drdy,
-                         i_DADDR=self._mmcm_adr.storage,
-                         i_DI=self._mmcm_dat_w.storage,
-                         o_DO=self._mmcm_dat_r.status,
+                    # DRP
+                    i_DCLK=ClockSignal(),
+                    i_DWE=self._mmcm_write.re,
+                    i_DEN=self._mmcm_read.re | self._mmcm_write.re,
+                    o_DRDY=mmcm_drdy,
+                    i_DADDR=self._mmcm_adr.storage,
+                    i_DI=self._mmcm_dat_w.storage,
+                    o_DO=self._mmcm_dat_r.status,
 
-                         # Warm reset
-                         i_RST=self.warm_reset,
-                         ),
+                    # Warm reset
+                    i_RST=self.warm_reset,
+                    ),
 
-                # feedback delay compensation buffers
+                # Feedback delay compensation buffers
                 Instance("BUFG", i_I=pll_fb, o_O=pll_fb_bufg),
 
-                # global distribution buffers
+                # Global distribution buffers
                 Instance("BUFG", i_I=pll_sys, o_O=self.cd_sys.clk),
                 Instance("BUFG", i_I=pll_spiclk, o_O=self.cd_spi.clk),
 
