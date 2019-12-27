@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 # This variable defines all the external programs that this module
 # relies on.  lxbuildenv reads this variable in order to ensure
 # the build will finish without exiting due to missing third-party
@@ -39,105 +40,108 @@ from gateware import spinor
 from gateware import keyboard
 
 _io = [
-    # see main() for UART pins
-
     ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),
 
     #("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")), # analog
     #("usbc_cc2", 0, Pins("E16"), IOStandard("LVCMOS33")), # analog
-    # ("vbus_div", 0, Pins("E12"), IOStandard("LVCMOS33")), # analog
+    #("vbus_div", 0, Pins("E12"), IOStandard("LVCMOS33")), # analog
     ("lpclk", 0, Pins("N15"), IOStandard("LVCMOS18")),  # wifi_lpclk
 
     # Power control signals
     ("power", 0,
-        Subsignal("audio_on", Pins("G13"), IOStandard("LVCMOS33")),
-        Subsignal("fpga_sys_on", Pins("N13"), IOStandard("LVCMOS18")),
+        Subsignal("audio_on",     Pins("G13"), IOStandard("LVCMOS33")),
+        Subsignal("fpga_sys_on",  Pins("N13"), IOStandard("LVCMOS18")),
         Subsignal("noisebias_on", Pins("A13"), IOStandard("LVCMOS33")),
         Subsignal("allow_up5k_n", Pins("U7"), IOStandard("LVCMOS18")),
-        Subsignal("pwr_s0", Pins("U6"), IOStandard("LVCMOS18")),
-        Subsignal("pwr_s1", Pins("L13"), IOStandard("LVCMOS18")),
+        Subsignal("pwr_s0",       Pins("U6"), IOStandard("LVCMOS18")),
+        Subsignal("pwr_s1",       Pins("L13"), IOStandard("LVCMOS18")),
         # Noise generator
-        Subsignal("noise_on", Pins("P14", "R13"), IOStandard("LVCMOS18")),
-    #    ("noise0", 0, Pins("B13"), IOStandard("LVCMOS33")), # these are analog
-    #    ("noise1", 0, Pins("B14"), IOStandard("LVCMOS33")),
+        Subsignal("noise_on", Pins("P14 R13"), IOStandard("LVCMOS18")),
+        #("noise0", 0, Pins("B13"), IOStandard("LVCMOS33")), # analog
+        #("noise1", 0, Pins("B14"), IOStandard("LVCMOS33")), # analog
      ),
 
     # Audio interface
-    ("au_clk1", 0, Pins("D14"), IOStandard("LVCMOS33")),
-    ("au_clk2", 0, Pins("F14"), IOStandard("LVCMOS33")),
-    ("au_mclk", 0, Pins("D18"), IOStandard("LVCMOS33")),
-    ("au_sdi1", 0, Pins("D12"), IOStandard("LVCMOS33")),
-    ("au_sdi2", 0, Pins("A15"), IOStandard("LVCMOS33")),
-    ("au_sdo1", 0, Pins("C13"), IOStandard("LVCMOS33")),
+    ("au_clk1",  0, Pins("D14"), IOStandard("LVCMOS33")),
+    ("au_clk2",  0, Pins("F14"), IOStandard("LVCMOS33")),
+    ("au_mclk",  0, Pins("D18"), IOStandard("LVCMOS33")),
+    ("au_sdi1",  0, Pins("D12"), IOStandard("LVCMOS33")),
+    ("au_sdi2",  0, Pins("A15"), IOStandard("LVCMOS33")),
+    ("au_sdo1",  0, Pins("C13"), IOStandard("LVCMOS33")),
     ("au_sync1", 0, Pins("B15"), IOStandard("LVCMOS33")),
     ("au_sync2", 0, Pins("B17"), IOStandard("LVCMOS33")),
-#    ("ana_vn", 0, Pins("K9"), IOStandard("LVCMOS33")), # analog
-#    ("ana_vp", 0, Pins("J10"), IOStandard("LVCMOS33")),
+    #("ana_vn", 0, Pins("K9"),  IOStandard("LVCMOS33")), # analog
+    #("ana_vp", 0, Pins("J10"), IOStandard("LVCMOS33")), # analog
 
     # I2C1 bus -- to RTC and audio CODEC
     ("i2c", 0,
         Subsignal("scl", Pins("C14"), IOStandard("LVCMOS33")),
         Subsignal("sda", Pins("A14"), IOStandard("LVCMOS33")),
-     ),
+    ),
+
     # RTC interrupt
     ("rtc_irq", 0, Pins("N5"), IOStandard("LVCMOS18")),
 
     # COM interface to UP5K
     ("com", 0,
-        Subsignal("csn", Pins("T15"), IOStandard("LVCMOS18")),
+        Subsignal("csn",  Pins("T15"), IOStandard("LVCMOS18")),
         Subsignal("miso", Pins("P16"), IOStandard("LVCMOS18")),
         Subsignal("mosi", Pins("N18"), IOStandard("LVCMOS18")),
         Subsignal("sclk", Pins("R16"), IOStandard("LVCMOS18")),
      ),
     ("com_irq", 0, Pins("M16"), IOStandard("LVCMOS18")),
 
-    # Top-side internal FPC header
-    ("gpio", 0, Pins("A16", "B16", "D16"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")), # B18 and D15 are used by the serial bridge
+    # Top-side internal FPC header (B18 and D15 are used by the serial bridge)
+    ("gpio", 0, Pins("A16 B16 D16"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")),
 
     # Keyboard scan matrix
     ("kbd", 0,
         # "key" 0-8 are rows, 9-18 are columns
-        Subsignal("row", Pins("F15", "E17", "G17", "E14", "E15", "H15", "G15", "H14",
-                              "H16"), IOStandard("LVCMOS33"), Misc("PULLDOWN True")),  # column scan with 1's, so PD to default 0
-        Subsignal("col", Pins("H17", "E18", "F18", "G18", "E13", "H18", "F13",
-                              "H13", "J13", "K13"), IOStandard("LVCMOS33")),
+        # column scan with 1's, so PD to default 0
+        Subsignal("row", Pins("F15 E17 G17 E14 E15 H15 G15 H14 H16"), Misc("PULLDOWN True")),
+        Subsignal("col", Pins("H17 E18 F18 G18 E13 H18 F13 H13 J13 K13")),
+        IOStandard("LVCMOS33")
     ),
 
     # LCD interface
     ("lcd", 0,
-        Subsignal("sclk", Pins("A17"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")),
-        Subsignal("scs", Pins("C18"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")),
-        Subsignal("si", Pins("D17"), IOStandard("LVCMOS33"), Misc("SLEW=SLOW")),
+        Subsignal("sclk", Pins("A17")),
+        Subsignal("scs",  Pins("C18")),
+        Subsignal("si",   Pins("D17")),
+        IOStandard("LVCMOS33"),
+        Misc("SLEW=SLOW")
+
      ),
 
     # SD card (TF) interface
     ("sdcard", 0,
-     Subsignal("data", Pins("J15 J14 K16 K14"), Misc("PULLUP True")),
-     Subsignal("cmd", Pins("J16"), Misc("PULLUP True")),
-     Subsignal("clk", Pins("G16")),
-     IOStandard("LVCMOS33"), Misc("SLEW=SLOW")
+        Subsignal("data", Pins("J15 J14 K16 K14"), Misc("PULLUP True")),
+        Subsignal("cmd",  Pins("J16"), Misc("PULLUP True")),
+        Subsignal("clk",  Pins("G16")),
+        IOStandard("LVCMOS33"),
+        Misc("SLEW=SLOW")
      ),
 
     # SPI Flash
-    ("spiflash_4x", 0,  # clock needs to be accessed through STARTUPE2
-     Subsignal("cs_n", Pins("M13")),
-     Subsignal("dq", Pins("K17", "K18", "L14", "M15")),
-     IOStandard("LVCMOS18")
-     ),
-    ("spiflash_1x", 0,  # clock needs to be accessed through STARTUPE2
-     Subsignal("cs_n", Pins("M13")),
-     Subsignal("mosi", Pins("K17")),
-     Subsignal("miso", Pins("K18")),
-     Subsignal("wp", Pins("L14")), # provisional
-     Subsignal("hold", Pins("M15")), # provisional
-     IOStandard("LVCMOS18")
-     ),
-    ("spiflash_8x", 0,  # clock needs to be accessed through STARTUPE2
-     Subsignal("cs_n", Pins("M13")),
-     Subsignal("dq", Pins("K17", "K18", "L14", "M15", "L17", "L18", "M14", "N14")),
-     Subsignal("dqs", Pins("R14")),
-     Subsignal("ecsn", Pins("L16")),
-     IOStandard("LVCMOS18")
+    ("spiflash_4x", 0, # clock needs to be accessed through STARTUPE2
+        Subsignal("cs_n", Pins("M13")),
+        Subsignal("dq", Pins("K17 K18 L14 M15")),
+        IOStandard("LVCMOS18")
+    ),
+    ("spiflash_1x", 0, # clock needs to be accessed through STARTUPE2
+        Subsignal("cs_n", Pins("M13")),
+        Subsignal("mosi", Pins("K17")),
+        Subsignal("miso", Pins("K18")),
+        Subsignal("wp",   Pins("L14")), # provisional
+        Subsignal("hold", Pins("M15")), # provisional
+        IOStandard("LVCMOS18")
+    ),
+    ("spiflash_8x", 0, # clock needs to be accessed through STARTUPE2
+        Subsignal("cs_n", Pins("M13")),
+        Subsignal("dq",   Pins("K17 K18 L14 M15 L17 L18 M14 N14")),
+        Subsignal("dqs",  Pins("R14")),
+        Subsignal("ecsn", Pins("L16")),
+        IOStandard("LVCMOS18")
      ),
 
     # SRAM
@@ -147,17 +151,46 @@ _io = [
             "M4  L6 K3 R18 U16 K1 R5  T2",
             "U1  N1 L5 K2  M18 T6"),
             IOStandard("LVCMOS18")),
-        Subsignal("ce_n", Pins("V5"), IOStandard("LVCMOS18"), Misc("PULLUP True")),
+        Subsignal("ce_n", Pins("V5"),  IOStandard("LVCMOS18"), Misc("PULLUP True")),
         Subsignal("oe_n", Pins("U12"), IOStandard("LVCMOS18"), Misc("PULLUP True")),
-        Subsignal("we_n", Pins("K4"), IOStandard("LVCMOS18"), Misc("PULLUP True")),
+        Subsignal("we_n", Pins("K4"),  IOStandard("LVCMOS18"), Misc("PULLUP True")),
         Subsignal("zz_n", Pins("V17"), IOStandard("LVCMOS18"), Misc("PULLUP True")),
         Subsignal("d", Pins(
-            "M2  R4  P2  L4  L1  M1  R1  P1 "
-            "U3  V2  V4  U2  N2  T1  K6  J6 "
-            "V16 V15 U17 U18 P17 T18 P18 M17 "
-            "N3  T4  V13 P15 T14 R15 T3  R7 "), IOStandard("LVCMOS18")),
+            "M2  R4  P2  L4  L1  M1  R1  P1",
+            "U3  V2  V4  U2  N2  T1  K6  J6",
+            "V16 V15 U17 U18 P17 T18 P18 M17",
+            "N3  T4  V13 P15 T14 R15 T3  R7"),
+            IOStandard("LVCMOS18")),
         Subsignal("dm_n", Pins("V3 R2 T5 T13"), IOStandard("LVCMOS18")),
     ),
+]
+
+_io_uart_debug = [
+    ("debug", 0,  # wired to the Rpi
+        Subsignal("tx", Pins("V6")),
+        Subsignal("rx", Pins("V7")),
+        IOStandard("LVCMOS18"),
+    ),
+
+    ("serial", 0, # wired to the internal flex
+        Subsignal("tx", Pins("B18")), # debug0 breakout
+        Subsignal("rx", Pins("D15")), # debug1
+        IOStandard("LVCMOS33"),
+    ),
+]
+
+_io_uart_debug_swapped = [
+    ("serial", 0, # wired to the RPi
+     Subsignal("tx", Pins("V6")),
+     Subsignal("rx", Pins("V7")),
+     IOStandard("LVCMOS18"),
+     ),
+
+    ("debug", 0, # wired to the internal flex
+     Subsignal("tx", Pins("B18")), # debug0 breakout
+     Subsignal("rx", Pins("D15")), # debug1
+     IOStandard("LVCMOS33"),
+     ),
 ]
 
 class Platform(XilinxPlatform):
@@ -604,36 +637,11 @@ def main():
         compile_gateware = False
         compile_software = False
 
-    if args.uart_swap:
-        _io += [
-            ("serial", 0,  # wired to the RPi
-             Subsignal("tx", Pins("V6")),
-             Subsignal("rx", Pins("V7")),
-             IOStandard("LVCMOS18"),
-             ),
-
-            ("debug", 0,   # wired to the internal flex
-             Subsignal("tx", Pins("B18")),  # debug0 breakout
-             Subsignal("rx", Pins("D15")),  # debug1
-             IOStandard("LVCMOS33"),
-             ),
-        ]
-    else:  # default to GDB bridge going to the Pi
-        _io += [
-            ("debug", 0,   # wired to the Rpi
-             Subsignal("tx", Pins("V6")),
-             Subsignal("rx", Pins("V7")),
-             IOStandard("LVCMOS18"),
-             ),
-
-            ("serial", 0,  # wired to the internal flex
-             Subsignal("tx", Pins("B18")),  # debug0 breakout
-             Subsignal("rx", Pins("D15")),  # debug1
-             IOStandard("LVCMOS33"),
-             ),
-        ]
-
     platform = Platform()
+    if args.uart_swap:
+        platform.add_extension(_io_uart_debug_swapped)
+    else:
+        platform.add_extension(_io_uart_debug)
     soc = BaseSoC(platform)
     builder = Builder(soc, output_dir="build", csr_csv="test/csr.csv", compile_software=compile_software, compile_gateware=compile_gateware)
     vns = builder.build()
