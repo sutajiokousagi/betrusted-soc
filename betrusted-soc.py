@@ -418,11 +418,12 @@ class BtSeed(Module, AutoDoc, AutoCSR):
         Use a random number or your own number if you are paranoid about hardware implants that target
         fixed locations within the FPGA.""")
 
-        rng = SystemRandom()
         if reproduceable:
-            self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset="4") # chosen by fair dice roll. guaranteed to be random.
+          seed_reset = "4" # chosen by fair dice roll. guaranteed to be random.
         else:
-            self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset=rng.getrandbits(64))
+          rng        = SystemRandom()
+          seed_reset = rng.getrandbits(64)
+        self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset=seed_reset)
 
 
 boot_offset = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
