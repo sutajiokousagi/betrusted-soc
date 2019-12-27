@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import sys
-sys.path.append("../")
-sys.path.append("../../")
+sys.path.append("../")    # FIXME
+sys.path.append("../../") # FIXME
 
-import lxbuildenv_sim
+import lxbuildenv
 
 # This variable defines all the external programs that this module
 # relies on.  lxbuildenv reads this variable in order to ensure
