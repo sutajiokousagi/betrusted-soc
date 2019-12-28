@@ -14,10 +14,10 @@ same license as the license for this project (found in this directory in the [LI
 To make this understanding explicit -- and for you to assert
 that you have the right to make the contribution -- commits must be
 signed off indicating acceptance of the
-[Developer Certificate of Origin 1.1](http://developercertificate.org/) [DCO](DCO)
+[Developer Certificate of Origin 1.1](https://developercertificate.org/).
 A nice explanation of the DCO has been provided by
-[Karl Fogel](http://www.red-bean.com/kfogel/)
-in his excellent book [Producing Open Source Software](http://producingoss.com/en/contributor-agreements.html#developer-certificate-of-origin).
+[Karl Fogel](https://www.red-bean.com/kfogel/)
+in his excellent book [Producing Open Source Software](https://producingoss.com/en/contributor-agreements.html#developer-certificate-of-origin).
 An explanation of the "sign-off" procedure is given by
 [Linus Torvalds](https://en.wikipedia.org/wiki/Linus_Torvalds) in [Linux](https://github.com/torvalds/linux/blob/master/Documentation/process/submitting-patches.rst#11-sign-your-work---the-developers-certificate-of-origin).
 
