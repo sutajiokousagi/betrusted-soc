@@ -9,13 +9,14 @@ pub mod efuse_ecc {
 
         let mut code: u32 = 0;
 
-        for row in 0..GENERATOR.len() {
+        for (i, gen) in GENERATOR.iter().enumerate() {
             let mut parity: u32 = 0;
             for bit in 0..24 {
-                parity = parity ^ (((GENERATOR[row] & data) >> bit) & 0x1);
+                parity ^= ((gen & data) >> bit) & 0x1;
             }
-            code ^= parity << row;
+            code ^= parity << i;
         }
+
         if (code & 0x20) != 0 {
             code = (!code & 0x1F) | 0x20;
         }
