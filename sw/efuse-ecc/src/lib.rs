@@ -33,16 +33,26 @@ mod tests {
 
     #[test]
     fn it_works() {
-       assert_eq!(2 + 2, 4);
-   }
+        assert_eq!(2 + 2, 4);
+    }
 
-   #[test]
-   fn vectors() {
-       const INPUTS: [u32; 7] = [0xFF_FFFD, 0xA003, 0xA00A, 0xF00A, 0xF00F, 0xB00F, 0x00C5_B000];
-       const OUTPUTS: [u32; 7] = [0x25FFFFFD, 0x2400A003, 0x3600A00A, 0x1E00F00A, 0x1400F00F, 0x3700B00F, 0x2AC5B000];
+    #[test]
+    fn vectors() {
+        const INPUTS: [u32; 7] = [
+            0xFF_FFFD,
+            0xA003,
+            0xA00A,
+            0xF00A,
+            0xF00F,
+            0xB00F,
+            0x00C5_B000,
+        ];
+        const OUTPUTS: [u32; 7] = [
+            0x25FFFFFD, 0x2400A003, 0x3600A00A, 0x1E00F00A, 0x1400F00F, 0x3700B00F, 0x2AC5B000,
+        ];
 
-       for i in 0..INPUTS.len() {
-          assert_eq!(OUTPUTS[i], add_ecc(INPUTS[i]));
+        for i in 0..INPUTS.len() {
+            assert_eq!(OUTPUTS[i], add_ecc(INPUTS[i]));
         }
     }
 
