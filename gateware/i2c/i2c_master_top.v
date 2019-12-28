@@ -70,7 +70,7 @@
 //
 
 // synopsys translate_off
-`include "timescale.v"
+`timescale 1ns / 10ps
 // synopsys translate_on
 
 `include "i2c_master_defines.v"

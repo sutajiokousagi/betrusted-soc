@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
-import lxbuildenv_sim
+import sys
+sys.path.append("../")    # FIXME
+sys.path.append("../../") # FIXME
+
+import lxbuildenv
 
 # This variable defines all the external programs that this module
 # relies on.  lxbuildenv reads this variable in order to ensure
@@ -8,7 +12,6 @@ import lxbuildenv_sim
 # programs.
 LX_DEPENDENCIES = ["riscv", "vivado"]
 
-import sys
 # print('\n'.join(sys.path))  # help with debugging PYTHONPATH issues
 
 from migen import *
@@ -131,14 +134,14 @@ class SimpleSim(SoCCore):
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
 
         # SPI interface
-        self.submodules.spimaster = spi.SpiMaster(platform.request("com"))
+        self.submodules.spimaster = spi.SPIMaster(platform.request("com"))
         self.add_csr("spimaster")
 
-        self.submodules.spislave = spi.SpiSlave(platform.request("slave"))
+        self.submodules.spislave = spi.SPISlave(platform.request("slave"))
         self.add_csr("spislave")
 
         # external SRAM to make BIOS build happy
-        self.submodules.sram_ext = sram_32.Sram32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=2)
+        self.submodules.sram_ext = sram_32.SRAM32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=2)
         self.add_csr("sram_ext")
         self.register_mem("sram_ext", self.mem_map["sram_ext"],
                   self.sram_ext.bus, size=0x1000000)

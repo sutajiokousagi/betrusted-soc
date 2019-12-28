@@ -9,7 +9,7 @@ import subprocess
 import argparse
 
 
-DEPS_DIR = "deps"
+DEPS_DIR = ["deps"]
 
 # Obtain the path to this script, plus a trailing separator.  This will
 # be used later on to construct various environment variables for paths
@@ -54,7 +54,7 @@ def get_required_dependencies(filename):
         dependencies['make'] = 1
     return list(dependencies.keys())
 
-def get_python_path(script_path, args):
+def get_python_path(script_path, args, depdir):
     # Python has no concept of a local dependency path, such as the C `-I``
     # switch, or the nodejs `node_modules` path, or the rust cargo registry.
     # Instead, it relies on an environment variable to append to the search
@@ -62,15 +62,17 @@ def get_python_path(script_path, args):
     # Construct this variable by adding each subdirectory under the `deps/`
     # directory to the PYTHONPATH environment variable.
     python_path = []
-    if os.path.isdir(script_path + DEPS_DIR):
-        for dep in os.listdir(script_path + DEPS_DIR):
-            dep = script_path + DEPS_DIR + os.path.sep + dep
-            if os.path.isdir(dep):
-                python_path.append(dep)
+    for k in DEPS_DIR:
+        if os.path.isdir(script_path + depdir):
+            for dep in os.listdir(script_path + depdir):
+                dep = script_path + k + os.path.sep + dep
+                if os.path.isdir(dep):
+                    python_path.append(dep)
     return python_path
 
 def fixup_env(script_path, args):
-    os.environ["PYTHONPATH"] = os.pathsep.join(get_python_path(script_path, 0))
+    for k in DEPS_DIR:
+        os.environ["PYTHONPATH"] = os.pathsep.join(get_python_path(script_path, 0, k))
 
     # Set the "LXBUILDENV_REEXEC" variable to prevent the script from continuously
     # reinvoking itself.
@@ -418,5 +420,6 @@ else:
     # Unfortunately, setuptools causes the sitewide packages to take precedence
     # over the PYTHONPATH variable.
     # Work around this bug by inserting paths into the first index.
-    for path in get_python_path(script_path, None):
-        sys.path.insert(0, path)
+    for k in DEPS_DIR:
+        for path in get_python_path(script_path, None, k):
+            sys.path.insert(0, path)

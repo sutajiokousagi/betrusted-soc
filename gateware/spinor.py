@@ -4,18 +4,10 @@ from litex.soc.interconnect import wishbone
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
 
 
-class SpiNor(Module, AutoCSR):
+class SPINOR(Module, AutoCSR):
     def __init__(self, platform, pads, size=2*1024*1024):
-        if isinstance(platform.toolchain, XilinxVivadoToolchain):
-            # instantiate Artix clock access
-            artix_clk = Signal()
-            self.specials += Instance("STARTUPE2",
-                                      i_CLK=0, i_GSR=0, i_GTS=0, i_KEYCLEARB=0, i_PACK=0,
-                                      i_USRCCLKO=artix_clk, i_USRCCLKTS=0, i_USRDONEO=1, i_USRDONETS=1)
-
         self.size = size
-
-        self.bus = bus = wishbone.Interface()
+        self.bus  = bus = wishbone.Interface()
 
         self.reset = Signal()
 
@@ -29,8 +21,10 @@ class SpiNor(Module, AutoCSR):
         self.stat3 = CSRStatus(size=8)
         self.stat4 = CSRStatus(size=8)
 
-        cfg = Signal(32)
-        cfg_we = Signal(4)
+        # # #
+
+        cfg     = Signal(32)
+        cfg_we  = Signal(4)
         cfg_out = Signal(32)
         self.comb += [
             cfg.eq(Cat(self.cfg1.storage, self.cfg2.storage, self.cfg3.storage, self.cfg4.storage)),
@@ -65,25 +59,21 @@ class SpiNor(Module, AutoCSR):
             self.comb +=  clk_pad.oe.eq(~reset)
 
         flash_addr = Signal(24)
-        # size/4 because data bus is 32 bits wide, -1 for base 0
+        # Size/4 because data bus is 32 bits wide, -1 for base 0
         mem_bits = bits_for(int(size/4)-1)
         pad = Signal(2)
         self.comb += flash_addr.eq(Cat(pad, bus.adr[0:mem_bits-1]))
 
         read_active = Signal()
-        spi_ready = Signal()
+        spi_ready   = Signal()
         self.sync += [
+            bus.ack.eq(0),
+            read_active.eq(0),
             If(bus.stb & bus.cyc & ~read_active,
-                read_active.eq(1),
-                bus.ack.eq(0),
+                read_active.eq(1)
             )
             .Elif(read_active & spi_ready,
-                read_active.eq(0),
-                bus.ack.eq(1),
-            )
-            .Else(
-                bus.ack.eq(0),
-                read_active.eq(0),
+                bus.ack.eq(1)
             )
         ]
 
@@ -92,7 +82,17 @@ class SpiNor(Module, AutoCSR):
 
         instance_clk = Signal()
         if isinstance(platform.toolchain, XilinxVivadoToolchain):
-            self.comb += artix_clk.eq(instance_clk)
+            self.specials += Instance("STARTUPE2",
+                i_CLK       = 0,
+                i_GSR       = 0,
+                i_GTS       = 0,
+                i_KEYCLEARB = 0,
+                i_PACK      = 0,
+                i_USRCCLKO  = instance_clk,
+                i_USRCCLKTS = 0,
+                i_USRDONEO  = 1,
+                i_USRDONETS = 1
+            )
         else:
             self.comb += clk_pad.o.eq(instance_clk)
         self.specials += Instance("spimemio",
@@ -113,16 +113,16 @@ class SpiNor(Module, AutoCSR):
             i_flash_io2_di = wp_pad.i,
             i_flash_io3_di = hold_pad.i,
 
-            i_resetn = ~reset,
-            i_clk = ClockSignal(),
+            i_resetn       = ~reset,
+            i_clk          = ClockSignal(),
 
-            i_valid = bus.stb & bus.cyc,
-            o_ready = spi_ready,
-            i_addr  = flash_addr,
-            o_rdata = o_rdata,
+            i_valid        = bus.stb & bus.cyc,
+            o_ready        = spi_ready,
+            i_addr         = flash_addr,
+            o_rdata        = o_rdata,
 
-            i_cfgreg_we = cfg_we,
-            i_cfgreg_di = cfg,
-            o_cfgreg_do = cfg_out,
+            i_cfgreg_we    = cfg_we,
+            i_cfgreg_di    = cfg,
+            o_cfgreg_do    = cfg_out,
         )
         platform.add_source("gateware/spimemio.v")

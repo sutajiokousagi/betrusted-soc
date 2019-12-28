@@ -127,7 +127,6 @@ class RTLI2C(Module, AutoCSR, AutoDoc):
             o_sda_o    = sda_o,
             o_sda_oen  = sda_oen,
         )
-        platform.add_source(os.path.join("gateware", "timescale.v"))
         platform.add_source(os.path.join("gateware", "i2c", "i2c_master_defines.v"))
         platform.add_source(os.path.join("gateware", "i2c", "i2c_master_bit_ctrl.v"))
         platform.add_source(os.path.join("gateware", "i2c", "i2c_master_byte_ctrl.v"))
