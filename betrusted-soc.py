@@ -238,22 +238,20 @@ slow_clock = False
 
 class CRG(Module, AutoCSR):
     def __init__(self, platform):
-        refclk_freq = 12e6
-
-        clk12 = platform.request("clk12")
-        rst   = Signal()
         self.clock_domains.cd_sys   = ClockDomain()
         self.clock_domains.cd_spi   = ClockDomain()
         self.clock_domains.cd_lpclk = ClockDomain()
 
+        # # #
+
         clk32khz = platform.request("lpclk")
         self.specials += Instance("BUFG", i_I=clk32khz, o_O=self.cd_lpclk.clk)
+        platform.add_period_constraint(clk32khz, 1e9/32.768e3)
 
+        clk12 = platform.request("clk12")
+        platform.add_period_constraint(clk12, 1e9/12e6)
         if slow_clock:
-            self.specials += [
-                Instance("BUFG", i_I=clk12, o_O=self.cd_sys.clk),
-                AsyncResetSynchronizer(self.cd_sys, rst)
-            ]
+            self.specials += Instance("BUFG", i_I=clk12, o_O=self.cd_sys.clk)
         else:
             # DRP
             self._mmcm_read  = CSR()
@@ -304,7 +302,7 @@ class CRG(Module, AutoCSR):
 
                     # Warm reset
                     i_RST=self.warm_reset,
-                    ),
+                ),
 
                 # Feedback delay compensation buffers
                 Instance("BUFG", i_I=pll_fb, o_O=pll_fb_bufg),
@@ -313,8 +311,8 @@ class CRG(Module, AutoCSR):
                 Instance("BUFG", i_I=pll_sys, o_O=self.cd_sys.clk),
                 Instance("BUFG", i_I=pll_spiclk, o_O=self.cd_spi.clk),
 
-                AsyncResetSynchronizer(self.cd_sys, rst | ~pll_locked),
-                AsyncResetSynchronizer(self.cd_spi, rst | ~pll_locked),
+                AsyncResetSynchronizer(self.cd_sys, ~pll_locked),
+                AsyncResetSynchronizer(self.cd_spi, ~pll_locked),
             ]
             self.sync += [
                 If(self._mmcm_read.re | self._mmcm_write.re,
@@ -499,13 +497,9 @@ class BetrustedSoC(SoCCore):
         self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/sys_clk_freq)
         self.comb += self.crg.warm_reset.eq(warm_reset)
         self.platform.add_platform_command(
-            "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
-        self.platform.add_platform_command(
             "create_clock -name sys_clk -period 10.0 [get_nets sys_clk]")
         self.platform.add_platform_command(
             "create_clock -name spi_clk -period 50.0 [get_nets spi_clk]")
-        self.platform.add_platform_command(
-            "create_clock -name lpclk -period 30517.5781 [get_nets lpclk]") # 32768 Hz in ns
         self.platform.add_platform_command(
             "create_generated_clock -name sys_clk -source [get_pins MMCME2_ADV/CLKIN1] -multiply_by 50 -divide_by 6 -add -master_clock clk12 [get_pins MMCME2_ADV/CLKOUT0]"
         )
