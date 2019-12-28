@@ -9,13 +9,14 @@ pub mod efuse_ecc {
 
         let mut code: u32 = 0;
 
-        for row in 0..GENERATOR.len() {
+        for (i, gen) in GENERATOR.iter().enumerate() {
             let mut parity: u32 = 0;
             for bit in 0..24 {
-                parity = parity ^ (((GENERATOR[row] & data) >> bit) & 0x1);
+                parity ^= ((gen & data) >> bit) & 0x1;
             }
-            code ^= parity << row;
+            code ^= parity << i;
         }
+
         if (code & 0x20) != 0 {
             code = (!code & 0x1F) | 0x20;
         }
@@ -33,16 +34,23 @@ mod tests {
 
     #[test]
     fn it_works() {
-       assert_eq!(2 + 2, 4);
-   }
+        assert_eq!(2 + 2, 4);
+    }
 
-   #[test]
-   fn vectors() {
-       const INPUTS: [u32; 7] = [0xFF_FFFD, 0xA003, 0xA00A, 0xF00A, 0xF00F, 0xB00F, 0x00C5_B000];
-       const OUTPUTS: [u32; 7] = [0x25FFFFFD, 0x2400A003, 0x3600A00A, 0x1E00F00A, 0x1400F00F, 0x3700B00F, 0x2AC5B000];
+    #[test]
+    fn vectors() {
+        const V: [(u32, u32); 7] = [
+            (0x00_FFFFFD, 0x25_FFFFFD),
+            (0x00_00A003, 0x24_00A003),
+            (0x00_00A00A, 0x36_00A00A),
+            (0x00_00F00A, 0x1E_00F00A),
+            (0x00_00F00F, 0x14_00F00F),
+            (0x00_00B00F, 0x37_00B00F),
+            (0x00_C5B000, 0x2A_C5B000),
+        ];
 
-       for i in 0..INPUTS.len() {
-          assert_eq!(OUTPUTS[i], add_ecc(INPUTS[i]));
+        for i in &V {
+            assert_eq!(i.1, add_ecc(i.0));
         }
     }
 
