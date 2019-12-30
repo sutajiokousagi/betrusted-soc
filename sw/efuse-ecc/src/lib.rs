@@ -58,5 +58,8 @@ mod tests {
     fn gen_test() {
         assert_eq!(0x2708_63C1, add_ecc(0x8_63C1));
         assert_eq!(0x2C02_A541, add_ecc(0x2_A541));
+        assert_eq!(0x00CC_ABCD, add_ecc(0xCC_ABCD));
+        assert_eq!(0x03C6_DEF0, add_ecc(0xC6_DEF0));
+        assert_eq!(0x3944_EEEE, add_ecc(0x44_EEEE));
     }
 }
