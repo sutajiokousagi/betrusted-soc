@@ -69,7 +69,6 @@ use embedded_graphics::primitives::Line;
 use alloc::vec::Vec;
 use alloc::string::String;
 
-pub mod jtag;
 use jtag::*;
 
 pub struct Bounce {

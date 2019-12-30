@@ -1,3 +1,5 @@
+#![no_std]
+
 /// Simple JTAG machine implementation
 /// 
 /// Applications calling this implementation first loads queries into the JtagMach pending queue.
@@ -14,6 +16,9 @@
 /// "tag" to the JtagLegs to help decode what data or command they corresponded to. 
 /// 
 
+// Plug in the allocator crate
+extern crate alloc;
+extern crate alloc_riscv;
 
 use betrusted_hal::hal_uart::*;
 use alloc::vec::Vec;
