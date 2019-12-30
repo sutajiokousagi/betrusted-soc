@@ -180,7 +180,7 @@ impl JtagLeg {
     }
 }
 
-trait JtagPhy {
+pub trait JtagPhy {
     fn new() -> Self;
     fn sync(&mut self, tdi: bool, tms: bool) -> bool; 
     fn nosync(&mut self, tdi: bool, tms: bool, tck: bool) -> bool;
@@ -252,8 +252,6 @@ pub struct JtagMach {
     current: Option<JtagLeg>,
     /// an integer for debug help
     debug: u32,
-    /// a PHY that implements the JtagPhy traits
-    phy: JtagUartPhy,
 }
 
 impl JtagMach {
@@ -264,7 +262,6 @@ impl JtagMach {
             done: Vec::new(),
             current: None,
             debug: 0,
-            phy: JtagUartPhy::new(),
         }
     }
 
@@ -318,10 +315,10 @@ impl JtagMach {
     /// step() -- move state machine by one cycle
     /// if there is nothing in the pending queue, stay in idle
     /// if something in the pending queue, traverse to execute it
-    pub fn step(&mut self) {
+    pub fn step<T: JtagPhy>(&mut self, phy: &mut T) {
         self.s = match self.s {
             JtagState::TestReset => {
-                self.phy.sync(false, false);
+                phy.sync(false, false);
                 JtagState::RunIdle
             },
             JtagState::RunIdle => {
@@ -330,13 +327,13 @@ impl JtagMach {
                     match cur.c {
                         JtagChain::DR => {
                             self.debug = 2;
-                            self.phy.sync(false, true);
+                            phy.sync(false, true);
                         },
                         JtagChain::IR => {
                             self.debug = 3;
                             // must be IR -- do two TMS high pulses to get to the IR leg
-                            self.phy.sync(false, true);
-                            self.phy.sync(false, true);
+                            phy.sync(false, true);
+                            phy.sync(false, true);
                         }
                     }
                     JtagState::Select
@@ -349,18 +346,18 @@ impl JtagMach {
                     } else {
                         // nothing pending, nothing current
                         // stay in the current state
-                        self.phy.sync(false, false);
+                        phy.sync(false, false);
                     }
                     JtagState::RunIdle
                 }
             },
             JtagState::Select => {
-                self.phy.sync(false, false);
+                phy.sync(false, false);
                 JtagState::Capture
             }, 
             JtagState::Capture => {
                 // always move to shift, because leg structures always have data
-                self.phy.sync(false, false);
+                phy.sync(false, false);
                 JtagState::Shift
             },
             JtagState::Shift => {
@@ -368,13 +365,13 @@ impl JtagMach {
                 if let Some(ref mut cur) = self.current {
                     if let Some(tdi) = cur.i.pop() {
                         if cur.i.len() > 0 {
-                            let tdo: bool = self.phy.sync(tdi, false);
+                            let tdo: bool = phy.sync(tdi, false);
                             cur.o.push(tdo);
                             self.current = Some(cur.clone());
                             JtagState::Shift 
                         } else {
                             // last element should leave the state
-                            let tdo: bool = self.phy.sync(tdi, true);
+                            let tdo: bool = phy.sync(tdi, true);
                             cur.o.push(tdo);
                             self.current = Some(cur.clone());
                             JtagState::Exit1
@@ -389,19 +386,19 @@ impl JtagMach {
                 }
             },
             JtagState::Exit1 => {
-                self.phy.sync(false, true);
+                phy.sync(false, true);
                 JtagState::Update
             },
             JtagState::Pause => {
-                self.phy.sync(false, true);
+                phy.sync(false, true);
                 JtagState::Exit2
             },
             JtagState::Exit2 => {
-                self.phy.sync(false, true);
+                phy.sync(false, true);
                 JtagState::Update
             },
             JtagState::Update => {
-                self.phy.sync(false, false);
+                phy.sync(false, false);
                 
                 self.pending.remove(0); // remove the oldest entry
                 if let Some(next) = self.current.take() {
@@ -413,23 +410,23 @@ impl JtagMach {
     }
 
     /// reset() -- bring the state machine back to the TEST_RESET state
-    pub fn reset(&mut self) {
+    pub fn reset<T: JtagPhy>(&mut self, phy: &mut T) {
         // regardless of what state we are in, 5 cycles of TMS=1 will bring us to RESET
         for _ in 0..5 {
-            self.phy.sync(false, true);
+            phy.sync(false, true);
         }
         self.s = JtagState::TestReset;
     }
 
     /// next() -- advance until a RUN_IDLE state. If currently RUN_IDLE, traverse the next available leg, if one exists
-    pub fn next(&mut self) {
+    pub fn next<T: JtagPhy>(&mut self, phy: &mut T) {
         match self.s {
             JtagState::RunIdle | JtagState::TestReset => {
                 if self.has_pending() {
                     // if pending, step until we're into a leg
                     loop {
                         match self.s {
-                            JtagState::RunIdle | JtagState::TestReset => self.step(),
+                            JtagState::RunIdle | JtagState::TestReset => self.step(phy),
                             _ => break,
                         }
                     }
@@ -437,11 +434,11 @@ impl JtagMach {
                     loop {
                         match self.s {
                             JtagState::RunIdle | JtagState::TestReset => break,
-                            _ => self.step(),
+                            _ => self.step(phy),
                         }
                     }
                 } else {
-                    self.step(); // this should be a single step with no state change
+                    self.step(phy); // this should be a single step with no state change
                 }
             },
             _ => {
@@ -449,7 +446,7 @@ impl JtagMach {
                 loop {
                     match self.s {
                         JtagState::RunIdle | JtagState::TestReset => break,
-                        _ => self.step(),
+                        _ => self.step(phy),
                     }
                 }
             },

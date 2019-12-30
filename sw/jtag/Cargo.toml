@@ -9,4 +9,3 @@ edition = "2018"
 [dependencies]
 betrusted-hal = { path = "../betrusted-hal" }
 alloc-riscv = { path = "../alloc-riscv" }
-jtag = { path = "../jtag" }
