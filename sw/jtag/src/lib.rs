@@ -116,6 +116,20 @@ impl JtagLeg {
         }
     }
 
+    pub fn push_u8(&mut self, data: u8, count: usize, endian: JtagEndian) {
+        assert!(count <= 8);
+        for i in 0..count {
+            match endian {
+                JtagEndian::Big => {
+                    if (data & (1 << i)) == 0 { self.i.push(false) } else { self.i.push(true) }
+                },
+                JtagEndian::Little => {
+                    if (data & (1 << (count-1-i))) == 0 { self.i.push(false) } else { self.i.push(true) }
+                },
+            }
+        }
+    }
+
     pub fn pop_u32(&mut self, count: usize, endian: JtagEndian) -> Option<u32> {
         if self.o.len() < count {
             // error out before trying to touch the vector, so that in case
@@ -167,6 +181,32 @@ impl JtagLeg {
 
         Some(data)
     }
+
+    pub fn pop_u8(&mut self, count: usize, endian: JtagEndian) -> Option<u8> {
+        if self.o.len() < count {
+            // error out before trying to touch the vector, so that in case
+            // of a parameter error we can try again without having lost our data
+            // in general, "count" should be very well specified in this protocol.
+            return None;
+        }
+
+        let mut data: u8 = 0;
+        for _ in 0..count {
+            match endian {
+                JtagEndian::Little => {
+                    data <<= 1;
+                    if self.o.pop().unwrap() { data |= 0x1; }
+                }
+                JtagEndian::Big => {
+                    data >>= 1;
+                    if self.o.pop().unwrap() { data |= 0x80; }
+                }
+            }
+        }
+
+        Some(data)
+    }
+
 
     pub fn tag(&self) -> String {
         self.tag.clone()
