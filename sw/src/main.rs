@@ -70,6 +70,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 
 use jtag::*;
+use efuse_api::*;
 
 pub struct Bounce {
     vector: Point,
@@ -146,6 +147,8 @@ pub struct Repl {
     jtag: JtagMach,
     /// JTAG phy
     jtagphy: JtagUartPhy,
+    /// efuse API
+    efuse: EfuseApi,
 }
 
 const PROMPT: &str = "bt> ";
@@ -161,6 +164,7 @@ impl Repl {
                 power: true,
                 jtag: JtagMach::new(),
                 jtagphy: JtagUartPhy::new(),
+                efuse: EfuseApi::new(),
             }
         }
     }
@@ -313,6 +317,9 @@ impl Repl {
                 } else {
                     self.output = format!("efuse data not in queue!");
                 }
+            } else if self.cmd.trim() == "fu2" { // try reading out again
+                self.efuse.fetch(&mut self.jtag, &mut self.jtagphy);
+                self.output = format!("user: 0x{:08x}", self.efuse.phy_user());
             } else if self.cmd.trim() == "u4" { // user4
                 self.jtag.reset(&mut self.jtagphy);
                 let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
