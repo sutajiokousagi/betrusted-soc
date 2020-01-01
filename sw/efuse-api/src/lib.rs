@@ -71,6 +71,16 @@ impl EfusePhy {
     pub fn cntl(&self) -> u8 { self.cntl }
     pub fn key(&self) -> [u8; 32] { self.key }
 
+    /// this is a TEST FUNCTION ONLY. Unfortunately, the Rust test directive does not
+    /// like this no_std runtime / std test environment.
+    pub fn bank_patch(&mut self, index: usize, data: u32) { // this is just for test routines
+        self.banks[index] = data;
+        // re-derive key bits from bank data
+        for i in 0..32 {
+            self.key[i] = ((self.banks[((i / 3) + 1) as usize] >> ((i % 3) * 8)) & 0xFF) as u8;
+        }
+    }
+
     /// fetch the current fuse state
     pub fn fetch<T: JtagPhy>(&mut self, jm: &mut JtagMach, jp: &mut T) {
         jm.reset(jp);
@@ -180,6 +190,9 @@ impl EfuseApi {
     pub fn api_user(&self) -> u32 { self.user }
     pub fn api_cntl(&self) -> u8 { self.cntl }
 
+    /// this is a TEST FUNCTION ONLY. Unfortunately, the Rust test directive does not
+    /// like this no_std runtime / std test environment.
+    pub fn bank_patch(&mut self, index: usize, data: u32) { self.phy.bank_patch(index, data); }
 
     // synchronizes the API state with the hardware. Needs to be called first.
     pub fn fetch<T: JtagPhy>(&mut self, jm: &mut JtagMach, jp: &mut T) {
@@ -252,10 +265,11 @@ impl EfuseApi {
     }
 
     fn burn_bank<T: JtagPhy>(&mut self, bank: usize, ones: u32, jm: &mut JtagMach, jp: &mut T) {
-        jp.pause(2500); // 2.5ms pause between banks
         if ones == 0 { // skip the bank if nothing to burn
             return;
         }
+        jp.pause(2500); // 2.5ms pause between banks
+
         let mut bank_select: u8 = 1; // bank 0 by default (special case)
         let mut word_select: u8 = 3;
         if bank > 0 { // rest of banks
@@ -264,7 +278,7 @@ impl EfuseApi {
         }
 
         let bank_fuse: [(JtagChain, usize, u64, &str); 7] = [
-            (JtagChain::IR, 6, 0b001011, "JSTART"),
+            (JtagChain::IR, 6, 0b001100, "JSTART"),
             (JtagChain::IR, 6, 0b110000, "EFUSE"),
             (JtagChain::DR, 64, 0xa08a28ac00004001, "KEY_UNLOCK1"),
             (JtagChain::DR, 64, 0xa08a28ac00004001, "KEY_UNLOCK2"),
@@ -364,6 +378,8 @@ impl EfuseApi {
         }
         jp.pause(2000); 
         self.jtag_seq(jm, jp, &COMMIT_SEQ);
+        jp.pause(2000); 
+        jm.reset(jp);
         ok
     }
 
