@@ -221,7 +221,6 @@ impl JtagLeg {
 }
 
 pub trait JtagPhy {
-    fn new() -> Self;
     fn sync(&mut self, tdi: bool, tms: bool) -> bool; 
     fn nosync(&mut self, tdi: bool, tms: bool, tck: bool) -> bool;
     fn pause(&mut self, us: u32);
@@ -237,11 +236,8 @@ impl JtagUartPhy {
     const MASK_TCK: u8 = 0x4;
     const MASK_TMS: u8 = 0x2;
     const MASK_TDI: u8 = 0x1;
-}
 
-impl JtagPhy for JtagUartPhy {
-
-    fn new() -> Self {
+    pub fn new() -> Self {
         let mut ret: JtagUartPhy = 
         JtagUartPhy {
             uart: BtUart::new(),
@@ -250,9 +246,12 @@ impl JtagPhy for JtagUartPhy {
         ret.uart.init();
         ret
     }
+}
+
+impl JtagPhy for JtagUartPhy {
 
     /// pause for a given number of microseconds.
-    fn pause(&mut self, us: u32) {
+    fn pause(&mut self, _us: u32) {
         // no need to implement because the UART PHY is so slow.
     }
 

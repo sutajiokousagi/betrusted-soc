@@ -249,7 +249,6 @@ impl EfuseApi {
     fn jtag_seq<T: JtagPhy>(&mut self, jm: &mut JtagMach, jp: &mut T, cmds: &[(JtagChain, usize, u64, &str)] ) -> u128 {
         let mut ret: u128 = 0;
 
-        jp.pause(2000); // 2ms pause before starting a new series of commands
         for tuple in cmds.iter() {
             let (chain, count, value, comment) = *tuple;
             let mut leg: JtagLeg = JtagLeg::new(chain, comment);
@@ -257,6 +256,7 @@ impl EfuseApi {
             jm.add(leg);
         }
         while jm.has_pending() {
+            jp.pause(2000); // 2ms pause before starting a new series of commands
             jm.next(jp);
             if let Some(mut data) = jm.get() {
                 // it's safe to just pop the "max length" because pop is "best effort only"
@@ -275,7 +275,7 @@ impl EfuseApi {
         let word_select: u8 = bank_select | 0b10;
 
         let bank_fuse: [(JtagChain, usize, u64, &str); 7] = [
-            (JtagChain::IR, 6, 0b001100, "JSTART"),
+            (JtagChain::IR, 6, 0b001011, "JSTART"),
             (JtagChain::IR, 6, 0b110000, "EFUSE"),
             (JtagChain::DR, 64, 0xa08a28ac00004001, "KEY_UNLOCK1"),
             (JtagChain::DR, 64, 0xa08a28ac00004001, "KEY_UNLOCK2"),
@@ -289,7 +289,7 @@ impl EfuseApi {
             if (curbit & 0x1) == 1 {
                 let bit_burn: [(JtagChain, usize, u64, &str); 3] = [
                     (JtagChain::IR, 6, 0b110000, "EFUSE"),
-                    (JtagChain::DR, 64, (0xa08a28ac00004000 | word_select as u64) + (i as u64) << 8, "KEY_BIT"),
+                    (JtagChain::DR, 64, (0xa08a28ac00004000 | (word_select as u64)) + ((i as u64) << 8), "KEY_BIT"),
                     (JtagChain::DR, 64, 0x0, "KEY_BIT_WAIT"),
                 ];
                 self.jtag_seq(jm, jp, &bit_burn);
@@ -335,10 +335,12 @@ impl EfuseApi {
         }
 
         // reset the machine before doing any burning
+        jp.pause(2000); 
         jm.reset(jp);
         
         // iterate through banks, careful to make bank 0 the last
-        for index in FUSE_BANKS-1..=0 {
+        for index in (0..FUSE_BANKS).rev() {
+            jp.pause(2000); 
             if index == 0 {
                 // handle cntl special case
                 if ((self.phy.banks[0] & 0x3F) as u8 ^ self.cntl) != 0 {
@@ -371,83 +373,9 @@ impl EfuseApi {
             }
 
         }
+        jp.pause(2000); 
         self.jtag_seq(jm, jp, &COMMIT_SEQ);
         ok
-    }
-
-}
-
-
-// to see print outputs run with `cargo test -- --nocapture`
-#[cfg(test)]
-#[macro_use]
-extern crate std;
-
-mod tests {
-    use jtag::*;
-    use super::*;
-    #[test]
-    fn it_works() {
-        print!("hello world!\n");
-        assert_eq!(2 + 2, 4);
-    }
-
-
-    #[cfg(test)]
-    const TIMESTEP: f64 = 1e-6;
-    #[cfg(test)]
-    pub struct JtagTestPhy {
-        time: f64,
-    }
-    #[cfg(test)]
-    impl JtagPhy for JtagTestPhy {
-        fn new() -> Self {
-            println!("time, clk, tdo, tms, tdi");
-            JtagTestPhy {
-                time: 0.05,
-            }
-        }
-
-        fn sync(&mut self, tdi: bool, tms: bool) -> bool {
-
-            let mut local_tdi: u8 = 0;
-            let mut local_tms: u8 = 0;
-            if tdi {
-                local_tdi = 1;
-            }
-            if tms {
-                local_tms = 1;
-            }
-            self.time += TIMESTEP;
-            println!("{:.08}, {}, {}, {}, {}", self.time, 0, local_tdi, local_tms, local_tdi);
-            self.time += TIMESTEP;
-            println!("{:.08}, {}, {}, {}, {}", self.time, 1, local_tdi, local_tms, local_tdi);
-            self.time += TIMESTEP;
-            println!("{:.08}, {}, {}, {}, {}", self.time, 0, local_tdi, local_tms, local_tdi);
-
-            false
-        }
-
-        fn nosync(&mut self, _tdi: bool, _tms: bool, _tck: bool) -> bool {
-            // not actually used, not implemented -- fail if called
-            assert!(false);
-
-            false
-        }
-
-        fn pause(&mut self, us: u32) {
-            self.time += ((us as f64) * 1e-6);
-        }
-    }
-
-    #[test]
-    fn jtag_fetch() {
-        let mut jm: JtagMach = JtagMach::new();
-        let mut jp: JtagTestPhy = JtagTestPhy::new();
-
-        let mut efuse: EfuseApi = EfuseApi::new();
-
-        efuse.fetch(&mut jm, &mut jp);
     }
 
 }
