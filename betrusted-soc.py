@@ -26,6 +26,7 @@ from litex.soc.interconnect.csr_eventmanager import *
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.builder import *
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
+from litex.soc.cores.clock import S7MMCM
 from litex.soc.cores import spi_flash
 
 from gateware import info
@@ -234,10 +235,10 @@ class Platform(XilinxPlatform):
 
 # CRG ----------------------------------------------------------------------------------------------
 
-slow_clock = False
-
 class CRG(Module, AutoCSR):
-    def __init__(self, platform):
+    def __init__(self, platform, sys_clk_freq):
+        self.warm_reset = Signal()
+
         self.clock_domains.cd_sys   = ClockDomain()
         self.clock_domains.cd_spi   = ClockDomain()
         self.clock_domains.cd_lpclk = ClockDomain()
@@ -250,77 +251,17 @@ class CRG(Module, AutoCSR):
 
         clk12 = platform.request("clk12")
         platform.add_period_constraint(clk12, 1e9/12e6)
-        if slow_clock:
-            self.specials += Instance("BUFG", i_I=clk12, o_O=self.cd_sys.clk)
-        else:
-            # DRP
-            self._mmcm_read  = CSR()
-            self._mmcm_write = CSR()
-            self._mmcm_drdy  = CSRStatus()
-            self._mmcm_adr   = CSRStorage(7)
-            self._mmcm_dat_w = CSRStorage(16)
-            self._mmcm_dat_r = CSRStatus(16)
 
-            pll_locked    = Signal()
-            pll_fb        = Signal()
-            pll_fb_bufg   = Signal()
-            pll_sys       = Signal()
-            pll_spiclk    = Signal()
-            clk12_distbuf = Signal()
-            mmcm_drdy     = Signal()
+        # This allows PLLs/MMCMEs to be placed anywhere and reference the input clock
+        clk12_bufg = Signal()
+        self.specials += Instance("BUFG", i_I=clk12, o_O=clk12_bufg)
 
-            # This allows PLLs/MMCMEs to be placed anywhere and reference the input clock
-            self.specials += Instance("BUFG", i_I=clk12, o_O=clk12_distbuf),
-
-            self.warm_reset = Signal()
-            self.specials += [
-                Instance("MMCME2_ADV",
-                    p_STARTUP_WAIT="FALSE", o_LOCKED=pll_locked,
-                    p_BANDWIDTH="OPTIMIZED",
-
-                    # VCO @ 600MHz  (600-1200 range for -1LI)
-                    p_REF_JITTER1=0.01, p_CLKIN1_PERIOD=1e9/12e6,
-                    p_CLKFBOUT_MULT_F=50.0, p_DIVCLK_DIVIDE=1,
-                    i_CLKIN1=clk12_distbuf, i_CLKFBIN=pll_fb_bufg, o_CLKFBOUT=pll_fb,
-
-                    # 100 MHz - sysclk
-                    p_CLKOUT0_DIVIDE_F=6.0, p_CLKOUT0_PHASE=0.0,
-                    o_CLKOUT0=pll_sys,
-
-                    # 20 MHz - spiclk
-                    p_CLKOUT1_DIVIDE=30, p_CLKOUT1_PHASE=0,
-                    o_CLKOUT1=pll_spiclk,
-
-                    # DRP
-                    i_DCLK=ClockSignal(),
-                    i_DWE=self._mmcm_write.re,
-                    i_DEN=self._mmcm_read.re | self._mmcm_write.re,
-                    o_DRDY=mmcm_drdy,
-                    i_DADDR=self._mmcm_adr.storage,
-                    i_DI=self._mmcm_dat_w.storage,
-                    o_DO=self._mmcm_dat_r.status,
-
-                    # Warm reset
-                    i_RST=self.warm_reset,
-                ),
-
-                # Feedback delay compensation buffers
-                Instance("BUFG", i_I=pll_fb, o_O=pll_fb_bufg),
-
-                # Global distribution buffers
-                Instance("BUFG", i_I=pll_sys, o_O=self.cd_sys.clk),
-                Instance("BUFG", i_I=pll_spiclk, o_O=self.cd_spi.clk),
-
-                AsyncResetSynchronizer(self.cd_sys, ~pll_locked),
-                AsyncResetSynchronizer(self.cd_spi, ~pll_locked),
-            ]
-            self.sync += [
-                If(self._mmcm_read.re | self._mmcm_write.re,
-                   self._mmcm_drdy.status.eq(0)
-                   ).Elif(mmcm_drdy,
-                          self._mmcm_drdy.status.eq(1)
-                          )
-            ]
+        self.submodules.mmcm = mmcm = S7MMCM(speedgrade=-1)
+        self.comb += mmcm.reset.eq(self.warm_reset)
+        mmcm.register_clkin(clk12_bufg, 12e6)
+        mmcm.create_clkout(self.cd_sys, sys_clk_freq)
+        mmcm.create_clkout(self.cd_spi, 20e6)
+        mmcm.expose_drp()
 
 # WarmBoot -----------------------------------------------------------------------------------------
 
@@ -455,8 +396,8 @@ class BetrustedSoC(SoCCore):
         "csr":      0xf0000000,
     }
 
-    def __init__(self, platform, spiflash="spiflash_1x", **kwargs):
-        sys_clk_freq = int(100e6) if not slow_clock else int(12e6)
+    def __init__(self, platform, sys_clk_freq=int(100e6), spiflash="spiflash_1x", **kwargs):
+        assert sys_clk_freq in [int(12e6), int(100e6)]
 
         # CPU cluster
         ## For dev work, we're booting from SPI directly. However, for enhanced security
@@ -492,7 +433,7 @@ class BetrustedSoC(SoCCore):
         self.register_mem("vexriscv_debug", 0xe00f0000, self.cpu.debug_bus, 0x100)
 
         # Clockgen cluster -------------------------------------------------------------------------
-        self.submodules.crg = CRG(platform)
+        self.submodules.crg = CRG(platform, sys_clk_freq)
         self.add_csr("crg")
         self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/sys_clk_freq)
         self.comb += self.crg.warm_reset.eq(warm_reset)
