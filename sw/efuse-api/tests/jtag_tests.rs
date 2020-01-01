@@ -9,6 +9,7 @@ mod tests {
     use std::io::prelude::*;
     use std::path::Path;
     use efuse_api::*;
+    use efuse_ecc::efuse_ecc::*;
         
     #[cfg(test)]
     const TIMESTEP: f64 = 1e-6;
@@ -90,6 +91,33 @@ mod tests {
         efuse.set_key(key);
         efuse.set_user(0xA000_0002);
         efuse.set_cntl(0x3);
+
+        assert!(efuse.is_valid());
+        assert!(efuse.burn(&mut jm, &mut jp));
+    }
+
+    #[test]
+    fn jtag_patch() {
+        let mut jm: JtagMach = JtagMach::new();
+        let mut jp: JtagTestPhy = JtagTestPhy::new("jtag_patch.csv");
+
+        let mut efuse: EfuseApi = EfuseApi::new();
+
+        efuse.fetch(&mut jm, &mut jp);
+        let mut key: [u8; 32] = [0; 32];
+
+        // patch in a non-zero but valid value, because the fake PHY can't do this
+        efuse.bank_patch(10, add_ecc(0x2a5fc));
+        key[29] = 0x02; // keep "local" copy up to date
+        key[28] = 0xa5;
+        key[27] = 0xfc;
+
+        // now this is the new data
+        key[26] = 0xBE;
+        key[25] = 0xEF;
+        key[24] = 0x69;
+        
+        efuse.set_key(key);
 
         assert!(efuse.is_valid());
         assert!(efuse.burn(&mut jm, &mut jp));
