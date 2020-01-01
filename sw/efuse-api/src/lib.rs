@@ -256,7 +256,7 @@ impl EfuseApi {
             jm.add(leg);
         }
         while jm.has_pending() {
-            jp.pause(2000); // 2ms pause before starting a new series of commands
+            jp.pause(200); // 200us pause before starting a new series of commands
             jm.next(jp);
             if let Some(mut data) = jm.get() {
                 // it's safe to just pop the "max length" because pop is "best effort only"
@@ -268,11 +268,16 @@ impl EfuseApi {
     }
 
     fn burn_bank<T: JtagPhy>(&mut self, bank: usize, ones: u32, jm: &mut JtagMach, jp: &mut T) {
+        jp.pause(2500); // 2.5ms pause between banks
         if ones == 0 { // skip the bank if nothing to burn
             return;
         }
-        let bank_select: u8 = (bank as u8 - 1) * 8 + 0xA1;
-        let word_select: u8 = bank_select | 0b10;
+        let mut bank_select: u8 = 1; // bank 0 by default (special case)
+        let mut word_select: u8 = 3;
+        if bank > 0 { // rest of banks
+            bank_select = (bank as u8 - 1) * 8 + 0xA1;
+            word_select = bank_select | 0b10;
+        }
 
         let bank_fuse: [(JtagChain, usize, u64, &str); 7] = [
             (JtagChain::IR, 6, 0b001011, "JSTART"),
@@ -337,10 +342,10 @@ impl EfuseApi {
         // reset the machine before doing any burning
         jp.pause(2000); 
         jm.reset(jp);
+        jp.pause(2000); 
         
         // iterate through banks, careful to make bank 0 the last
         for index in (0..FUSE_BANKS).rev() {
-            jp.pause(2000); 
             if index == 0 {
                 // handle cntl special case
                 if ((self.phy.banks[0] & 0x3F) as u8 ^ self.cntl) != 0 {

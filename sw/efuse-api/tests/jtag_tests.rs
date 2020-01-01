@@ -85,9 +85,11 @@ mod tests {
         efuse.fetch(&mut jm, &mut jp);
         let mut key: [u8; 32] = [0; 32];
         key[0] = 0xB;
-        key[31] = 0xF;
+        key[31] = 0xF0;
+        key[29] = 0x1;
         efuse.set_key(key);
-        efuse.set_user(0xdead_beef);
+        efuse.set_user(0xA000_0002);
+        efuse.set_cntl(0x3);
 
         assert!(efuse.is_valid());
         assert!(efuse.burn(&mut jm, &mut jp));
