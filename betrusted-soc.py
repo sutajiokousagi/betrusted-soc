@@ -259,7 +259,7 @@ class CRG(Module, AutoCSR):
         self.submodules.mmcm = mmcm = S7MMCM(speedgrade=-1)
         self.comb += mmcm.reset.eq(self.warm_reset)
         mmcm.register_clkin(clk12_bufg, 12e6)
-        mmcm.create_clkout(self.cd_sys, sys_clk_freq)
+        mmcm.create_clkout(self.cd_sys, sys_clk_freq, margin=0) # there should be a precise solution by design
         mmcm.create_clkout(self.cd_spi, 20e6)
         mmcm.expose_drp()
 
