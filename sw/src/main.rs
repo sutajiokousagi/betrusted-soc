@@ -273,7 +273,20 @@ impl Repl {
             } else if self.cmd.trim() == "fc" {
                 self.efuse.fetch(&mut self.jtag, &mut self.jtagphy);
                 self.text.add_text(&mut format!("cntl: 0x{:02x}", self.efuse.phy_cntl()));
-            } else if self.cmd.trim() == "dna" { // dna
+            }  else if self.cmd.trim() == "test1" {
+                self.efuse.fetch(&mut self.jtag, &mut self.jtagphy);
+                let mut key: [u8; 32] = self.efuse.phy_key();
+                key[26] = 0xA0;
+                key[25] = 0x03;
+                key[24] = 0x81;
+                self.efuse.set_key(key);
+                if self.efuse.is_valid() {
+                    self.text.add_text(&mut format!("Patch is valid."));
+                } else {
+                    self.text.add_text(&mut format!("Patch is not valid."));
+                }
+                self.efuse.burn(&mut self.jtag, &mut self.jtagphy);
+            }  else if self.cmd.trim() == "dna" { // dna
                 self.jtag.reset(&mut self.jtagphy);
                 let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
                 ir_leg.push_u32(0b110010, 6, JtagEndian::Little);
@@ -283,7 +296,7 @@ impl Repl {
                    self.text.add_text(&mut format!("cmd instruction not in get queue!"));
                    return;
                 }
-                
+
                 let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "dna");
                 data_leg.push_u128(0, 64, JtagEndian::Little);
                 self.jtag.add(data_leg);
