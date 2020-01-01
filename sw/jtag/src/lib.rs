@@ -224,6 +224,7 @@ pub trait JtagPhy {
     fn new() -> Self;
     fn sync(&mut self, tdi: bool, tms: bool) -> bool; 
     fn nosync(&mut self, tdi: bool, tms: bool, tck: bool) -> bool;
+    fn pause(&mut self, us: u32);
 }
 
 pub struct JtagUartPhy {
@@ -248,6 +249,11 @@ impl JtagPhy for JtagUartPhy {
 
         ret.uart.init();
         ret
+    }
+
+    /// pause for a given number of microseconds.
+    fn pause(&mut self, us: u32) {
+        // no need to implement because the UART PHY is so slow.
     }
 
     /// given a tdi and tms value, pulse the clock, and then return the tdo that comes out 
