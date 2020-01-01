@@ -293,8 +293,8 @@ impl EfuseApi {
                     (JtagChain::DR, 64, 0x0, "KEY_BIT_WAIT"),
                 ];
                 self.jtag_seq(jm, jp, &bit_burn);
-                curbit >>= 1;
             }
+            curbit >>= 1;
         }
         self.jtag_seq(jm, jp, &bank_fuse);
     }
