@@ -249,7 +249,6 @@ impl JtagUartPhy {
 }
 
 impl JtagPhy for JtagUartPhy {
-
     /// pause for a given number of microseconds.
     fn pause(&mut self, _us: u32) {
         // no need to implement because the UART PHY is so slow.
