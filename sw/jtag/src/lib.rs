@@ -21,6 +21,7 @@ extern crate alloc;
 extern crate alloc_riscv;
 
 use betrusted_hal::hal_uart::*;
+use betrusted_hal::hal_time::*;
 use alloc::vec::Vec;
 use alloc::string::String;
 
@@ -250,9 +251,16 @@ impl JtagUartPhy {
 
 impl JtagPhy for JtagUartPhy {
     /// pause for a given number of microseconds.
-    fn pause(&mut self, _us: u32) {
-        // no need to implement because the UART PHY is so slow.
-    }
+    fn pause(&mut self, us: u32) {
+        let mut delay: u32 = us/1000;
+        if delay == 0 {
+            delay = 1;
+        }
+        unsafe {
+            let p: betrusted_pac::Peripherals = betrusted_pac::Peripherals::steal();
+            delay_ms(&p, delay);
+        }
+}
 
     /// given a tdi and tms value, pulse the clock, and then return the tdo that comes out 
     fn sync(&mut self, tdi: bool, tms: bool) -> bool {
