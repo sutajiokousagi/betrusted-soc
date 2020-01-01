@@ -103,25 +103,9 @@ impl EfusePhy {
         } else {
             assert!(false);
         }
-        // easiest just to re-run the command and copy it out to the u8 array
-        jp.pause(2000);
-        let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
-        ir_leg.push_u32(CMD_FUSE_KEY, 6, JtagEndian::Little);
-        jm.add(ir_leg);
-        jm.next(jp);
-        assert!(jm.get().is_some());
-
-        let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
-        data_leg.push_u128(0, 128, JtagEndian::Big);
-        data_leg.push_u128(0, 128, JtagEndian::Big);
-        jm.add(data_leg);
-        jm.next(jp);
-        if let Some(mut data) = jm.get() {
-            for index in 0..32 {
-                self.key[index] = data.pop_u8(8, JtagEndian::Little).unwrap();
-            }
-        } else {
-            assert!(false);
+        // derive bits from bank data, to debug any bit-order issues on readout, etc.
+        for index in 0..32 {
+            self.key[index] = ((self.banks[((index / 3) + 1) as usize] >> ((index % 3) * 8)) & 0xFF) as u8;
         }
 
         jp.pause(2000);
