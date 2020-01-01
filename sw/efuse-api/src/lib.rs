@@ -76,6 +76,7 @@ impl EfusePhy {
         jm.reset(jp);
 
         // get the KEY fuse
+        jp.pause(2000);
         let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
         ir_leg.push_u32(CMD_FUSE_KEY, 6, JtagEndian::Little);
         jm.add(ir_leg);
@@ -103,6 +104,13 @@ impl EfusePhy {
             assert!(false);
         }
         // easiest just to re-run the command and copy it out to the u8 array
+        jp.pause(2000);
+        let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
+        ir_leg.push_u32(CMD_FUSE_KEY, 6, JtagEndian::Little);
+        jm.add(ir_leg);
+        jm.next(jp);
+        assert!(jm.get().is_some());
+
         let mut data_leg: JtagLeg = JtagLeg::new(JtagChain::DR, "fuse");
         data_leg.push_u128(0, 128, JtagEndian::Big);
         data_leg.push_u128(0, 128, JtagEndian::Big);
@@ -116,6 +124,7 @@ impl EfusePhy {
             assert!(false);
         }
 
+        jp.pause(2000);
         // get the USER fuse and populate the split bank
         let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
         ir_leg.push_u32(CMD_FUSE_USER, 6, JtagEndian::Little);
@@ -138,6 +147,7 @@ impl EfusePhy {
             assert!(false);
         }
 
+        jp.pause(2000);
         // get the CNTL fuse
         let mut ir_leg: JtagLeg = JtagLeg::new(JtagChain::IR, "cmd");
         ir_leg.push_u32(CMD_FUSE_CNTL, 6, JtagEndian::Little);
@@ -239,6 +249,7 @@ impl EfuseApi {
     fn jtag_seq<T: JtagPhy>(&mut self, jm: &mut JtagMach, jp: &mut T, cmds: &[(JtagChain, usize, u64, &str)] ) -> u128 {
         let mut ret: u128 = 0;
 
+        jp.pause(2000); // 2ms pause before starting a new series of commands
         for tuple in cmds.iter() {
             let (chain, count, value, comment) = *tuple;
             let mut leg: JtagLeg = JtagLeg::new(chain, comment);
@@ -371,36 +382,29 @@ impl EfuseApi {
 #[cfg(test)]
 #[macro_use]
 extern crate std;
-use libc::*;
 
 mod tests {
-    use super::*;
     use jtag::*;
-
+    use super::*;
     #[test]
     fn it_works() {
         print!("hello world!\n");
         assert_eq!(2 + 2, 4);
     }
 
-    #[macro_use]
+
+    #[cfg(test)]
     const TIMESTEP: f64 = 1e-6;
+    #[cfg(test)]
     pub struct JtagTestPhy {
         time: f64,
     }
-
-    fn puts (s: &'_ [u8])
-    {
-        if s.contains(&b'\0') { unsafe {
-            ::libc::puts(s.as_ptr() as *const ::libc::c_char);
-        }}
-    }
-
+    #[cfg(test)]
     impl JtagPhy for JtagTestPhy {
         fn new() -> Self {
-            puts(b"time, clk, tdo, tms, tdi\0");
+            println!("time, clk, tdo, tms, tdi");
             JtagTestPhy {
-                time: 0.0,
+                time: 0.05,
             }
         }
 
@@ -415,12 +419,11 @@ mod tests {
                 local_tms = 1;
             }
             self.time += TIMESTEP;
-            format!("hello {}", "world");
-            //println!("{}, {}, {}, {}, {}", self.time, 0, 0, local_tms, local_tdi);
+            println!("{:.08}, {}, {}, {}, {}", self.time, 0, local_tdi, local_tms, local_tdi);
             self.time += TIMESTEP;
-            //println!("{}, {}, {}, {}, {}", self.time, 1, 0, local_tms, local_tdi);
+            println!("{:.08}, {}, {}, {}, {}", self.time, 1, local_tdi, local_tms, local_tdi);
             self.time += TIMESTEP;
-            //println!("{}, {}, {}, {}, {}", self.time, 0, 0, local_tms, local_tdi);
+            println!("{:.08}, {}, {}, {}, {}", self.time, 0, local_tdi, local_tms, local_tdi);
 
             false
         }
@@ -430,6 +433,10 @@ mod tests {
             assert!(false);
 
             false
+        }
+
+        fn pause(&mut self, us: u32) {
+            self.time += ((us as f64) * 1e-6);
         }
     }
 
