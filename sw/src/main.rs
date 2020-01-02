@@ -347,6 +347,7 @@ impl TextArea {
     }
 
     pub fn get_height(&self) -> usize { self.height_lines }
+    pub fn get_width(&self) -> usize { 38 as usize }
 
     pub fn get_line(&self, line: usize) -> String {
         if line > self.height_lines {
@@ -360,14 +361,12 @@ impl TextArea {
         }
     }
 
-    pub fn add_text(&mut self, text: &mut String) {
-        const WIDTH_CHARS: usize = 38;
-    
+    pub fn add_text(&mut self, text: &mut str) {
         // add the new text
         let mut index: usize = 0;
         let mut line = String::from("");
         for c in text.chars() {
-            if index == WIDTH_CHARS {
+            if index == self.get_width() {
                 self.text.insert(0, line);
                 line = String::from("");
                 index = 0;
