@@ -45,9 +45,16 @@ from gateware import keyboard
 _io = [
     ("clk12", 0, Pins("R3"), IOStandard("LVCMOS18")),
 
-    #("usbc_cc1", 0, Pins("C17"), IOStandard("LVCMOS33")), # analog
-    #("usbc_cc2", 0, Pins("E16"), IOStandard("LVCMOS33")), # analog
-    #("vbus_div", 0, Pins("E12"), IOStandard("LVCMOS33")), # analog
+    ("analog", 0,
+        Subsignal("usbc_cc1",    Pins("C17"), IOStandard("LVCMOS33")),
+        Subsignal("usbc_cc2",    Pins("E16"), IOStandard("LVCMOS33")),
+        Subsignal("vbus_div",    Pins("E12"), IOStandard("LVCMOS33")),
+        Subsignal("noise0",      Pins("B13"), IOStandard("LVCMOS33")),
+        Subsignal("noise1",      Pins("B14"), IOStandard("LVCMOS33")),
+        Subsignal("ana_vn",      Pins("K9")),  # no I/O standard as this is a dedicated pin
+        Subsignal("ana_vp",      Pins("J10")), # no I/O standard as this is a dedicated pin
+     ),
+
     ("lpclk", 0, Pins("N15"), IOStandard("LVCMOS18")),  # wifi_lpclk
 
     # Power control signals
@@ -60,8 +67,6 @@ _io = [
         Subsignal("pwr_s1",       Pins("L13"), IOStandard("LVCMOS18")),
         # Noise generator
         Subsignal("noise_on", Pins("P14 R13"), IOStandard("LVCMOS18")),
-        #("noise0", 0, Pins("B13"), IOStandard("LVCMOS33")), # analog
-        #("noise1", 0, Pins("B14"), IOStandard("LVCMOS33")), # analog
      ),
 
     # Audio interface
@@ -73,8 +78,6 @@ _io = [
     ("au_sdo1",  0, Pins("C13"), IOStandard("LVCMOS33")),
     ("au_sync1", 0, Pins("B15"), IOStandard("LVCMOS33")),
     ("au_sync2", 0, Pins("B17"), IOStandard("LVCMOS33")),
-    #("ana_vn", 0, Pins("K9"),  IOStandard("LVCMOS33")), # analog
-    #("ana_vp", 0, Pins("J10"), IOStandard("LVCMOS33")), # analog
 
     # I2C1 bus -- to RTC and audio CODEC
     ("i2c", 0,
@@ -446,7 +449,22 @@ class BetrustedSoC(SoCCore):
         )
 
         # Info -------------------------------------------------------------------------------------
-        self.submodules.info = info.Info(platform, self.__class__.__name__)
+        # XADC analog interface---------------------------------------------------------------------
+        from litex.soc.cores.xadc import analog_layout
+        analog_pads = Record(analog_layout)
+        analog = platform.request("analog")
+        self.comb += [
+            # NOTE - if part is changed to XC7S25, the pin-to-channel mappings change
+            analog_pads.vauxp.eq(Cat(analog.noise0,       # 0
+                                     Signal(7, reset=0),  # 1,2,3,4,5,6,7
+                                     analog.noise1, analog.vbus_div, analog.usbc_cc1, analog.usbc_cc2, # 8,9,10,11
+                                     Signal(4, reset=0),  # 12,13,14,15
+                                )),
+            analog_pads.vauxn.eq(0),
+            analog_pads.vp.eq(analog.ana_vp),
+            analog_pads.vn.eq(analog.ana_vn),
+        ]
+        self.submodules.info = info.Info(platform, self.__class__.__name__, analog_pads)
         self.add_csr("info")
         self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{info_dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
 
@@ -536,7 +554,8 @@ class BetrustedSoC(SoCCore):
         self.submodules.seed = BtSeed()
         self.add_csr("seed")
 
-        ## TODO: XADC, audio, wide-width/fast SPINOR, sdcard
+
+        ## TODO: audio, wide-width/fast SPINOR, sdcard
 """
         # this is how to force a block in a given location
         platform.toolchain.attr_translate["icap0"] = ("LOC", "ICAP_X0Y0")
