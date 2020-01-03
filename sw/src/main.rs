@@ -363,7 +363,6 @@ impl TextArea {
 
     pub fn add_text(&mut self, text: &mut String) {
         // add the new text
-
         let strbytes = text.as_bytes();
         for chunk in strbytes.chunks(self.get_width()) {
             self.text.insert(0, String::from_utf8(chunk.to_vec()).unwrap());
