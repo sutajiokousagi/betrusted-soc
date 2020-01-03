@@ -322,6 +322,16 @@ impl Repl {
                     unsafe { self.p.UART.rxtx.write(|w| w.bits(0xa as u32)); }
                     unsafe { self.p.UART.rxtx.write(|w| w.bits(0xd as u32)); }
                 }
+            } else if self.cmd.trim() == "xadc" {
+                let vccint: u32 = self.p.INFO.xadc_vccint0.read().bits() as u32 | ((self.p.INFO.xadc_vccint1.read().bits() as u32) << 8);
+                let vccaux: u32 = self.p.INFO.xadc_vccaux0.read().bits() as u32 | ((self.p.INFO.xadc_vccaux1.read().bits() as u32) << 8);
+                let vccbram: u32 = self.p.INFO.xadc_vccbram0.read().bits() as u32 | ((self.p.INFO.xadc_vccbram1.read().bits() as u32) << 8);
+                let temp: u32 = self.p.INFO.xadc_temperature0.read().bits() as u32 | ((self.p.INFO.xadc_temperature1.read().bits() as u32) << 8);
+
+                self.text.add_text(&mut format!("vccint: {:.3}V", (vccint as f64) / 1365.0));
+                self.text.add_text(&mut format!("vccaux: {:.3}V", (vccaux as f64) / 1365.0));
+                self.text.add_text(&mut format!("vccbram: {:.3}V", (vccbram as f64) / 1365.0));
+                self.text.add_text(&mut format!("temp: {:.2}C", ((temp as f64) * 0.12304) - 273.15));
             } else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
