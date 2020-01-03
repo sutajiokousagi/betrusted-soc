@@ -8,6 +8,7 @@ pub mod hal_lcd;
 pub mod hal_com;
 pub mod hal_kbd;
 pub mod hal_uart;
+pub mod hal_xadc;
 
 #[cfg(test)]
 mod tests {
