@@ -361,20 +361,13 @@ impl TextArea {
         }
     }
 
-    pub fn add_text(&mut self, text: &mut str) {
+    pub fn add_text(&mut self, text: &mut String) {
         // add the new text
-        let mut index: usize = 0;
-        let mut line = String::from("");
-        for c in text.chars() {
-            if index == self.get_width() {
-                self.text.insert(0, line);
-                line = String::from("");
-                index = 0;
-            }
-            line.push(c);
-            index = index + 1;
+
+        let strbytes = text.as_bytes();
+        for chunk in strbytes.chunks(self.get_width()) {
+            self.text.insert(0, String::from_utf8(chunk.to_vec()).unwrap());
         }
-        self.text.insert(0, line);
 
         // trim the old text
         while self.text.len() > self.height_lines {
