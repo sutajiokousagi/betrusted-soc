@@ -58,6 +58,7 @@ use betrusted_hal::hal_time::*;
 use betrusted_hal::hal_lcd::*;
 use betrusted_hal::hal_com::*;
 use betrusted_hal::hal_kbd::*;
+use betrusted_hal::hal_xadc::*;
 use embedded_graphics::prelude::*;
 use embedded_graphics::egcircle;
 use embedded_graphics::pixelcolor::BinaryColor;
@@ -149,6 +150,8 @@ pub struct Repl {
     jtagphy: JtagUartPhy,
     /// efuse API
     efuse: EfuseApi,
+    /// xadc object
+    xadc: BtXadc,
 }
 
 const PROMPT: &str = "bt> ";
@@ -167,6 +170,7 @@ impl Repl {
                 jtag: JtagMach::new(),
                 jtagphy: JtagUartPhy::new(),
                 efuse: EfuseApi::new(),
+                xadc: BtXadc::new(),
             }
         };
         r.text.add_text(&mut String::from("Awaiting input."));
@@ -332,6 +336,22 @@ impl Repl {
                 self.text.add_text(&mut format!("vccaux: {:.3}V", (vccaux as f64) / 1365.0));
                 self.text.add_text(&mut format!("vccbram: {:.3}V", (vccbram as f64) / 1365.0));
                 self.text.add_text(&mut format!("temp: {:.2}C", ((temp as f64) * 0.12304) - 273.15));
+            } else if self.cmd.trim() == "sensor" {
+                self.xadc.wait_update();
+                self.text.add_text(&mut format!("int: {:.3}V  aux: {:.3}V", (self.xadc.vccint() as f64) / 1365.0, (self.xadc.vccaux() as f64) / 1365.0));
+                self.text.add_text(&mut format!("bram: {:.3}V temp: {:.2}C", 
+                                                (self.xadc.vccbram() as f64) / 1365.0, 
+                                                ((self.xadc.temp() as f64) * 0.12304) - 273.15 ));
+                self.text.add_text(&mut format!("vbus: {}mV cc1: {}mV cc2: {}mV", 
+                                                self.xadc.vbus_mv(),
+                                                self.xadc.cc1_mv(),
+                                                self.xadc.cc2_mv()  ));
+                self.text.add_text(&mut format!("noise0: {:4} noise1: {:4}", self.xadc.noise0(), self.xadc.noise1()));
+                self.text.add_text(&mut format!("audio: 0x{:04x}", self.xadc.audio_sample() ));
+            } else if self.cmd.trim() == "non" {
+                unsafe{ self.p.POWER.power.write(|w| w.noisebias().bit(true).noise().bits(3).self_().bit(true).state().bits(3) ); }
+            } else if self.cmd.trim() == "noff" {
+                unsafe{ self.p.POWER.power.write(|w| w.noisebias().bit(false).noise().bits(0).self_().bit(true).state().bits(3) ); }
             } else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
