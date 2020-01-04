@@ -95,7 +95,7 @@ fn xadc_enable(p: &betrusted_pac::Peripherals, enable: bool) {
 }
 
 pub enum XadcSeq {
-    Default = 0,
+    Default_ = 0,
     SinglePass = 1,
     Continuous = 2,
     SingleChannel = 3,
@@ -109,6 +109,7 @@ pub enum XadcPower {
     AllOff = 3,
 }
 
+// channel coding for the control register
 pub enum XadcChannel {
     Temperature = 0,
     VccInt = 1,
@@ -134,6 +135,37 @@ pub enum XadcChannel {
     Vaux13 = 29,
     Vaux14 = 30,
     Vaux15 = 31,
+}
+
+// channel coding for the sequence bank of registers
+// this is as a bitmask, so that these can be OR'd together
+pub enum XadcSeq0Mask {
+    Calibration = 0x001,
+    Temperature = 0x100,
+    VccInt = 0x200,
+    VccAux = 0x400,
+    Dedicated = 0x800,
+    VrefP = 0x1000,
+    VrefN = 0x2000,
+    VccBram = 0x4000,
+}
+pub enum XadcSeq1Mask {
+    Vaux0 = 0x0001,
+    Vaux1 = 0x0002,
+    Vaux2 = 0x0004,
+    Vaux3 = 0x0008,
+    Vaux4 = 0x0010,
+    Vaux5 = 0x0020,
+    Vaux6 = 0x0040,
+    Vaux7 = 0x0080,
+    Vaux8 = 0x0100,
+    Vaux9 = 0x0200,
+    Vaux10 = 0x0400,
+    Vaux11 = 0x0800,
+    Vaux12 = 0x1000,
+    Vaux13 = 0x2000,
+    Vaux14 = 0x4000,
+    Vaux15 = 0x8000,
 }
 
 pub enum XadcFilter {
@@ -162,6 +194,12 @@ pub struct BtXadc {
 
 impl BtXadc {
     pub fn new() -> Self {
+        const NOISE0: XadcSeq1Mask = XadcSeq1Mask::Vaux0;
+        const NOISE1: XadcSeq1Mask = XadcSeq1Mask::Vaux8;
+        const CC1: XadcSeq1Mask = XadcSeq1Mask::Vaux10;
+        const CC2: XadcSeq1Mask = XadcSeq1Mask::Vaux11;
+        const VBUS: XadcSeq1Mask = XadcSeq1Mask::Vaux9;
+
         let ret: BtXadc;
         unsafe {
             ret = BtXadc {
@@ -170,19 +208,39 @@ impl BtXadc {
             };
         }
         xadc_enable(&ret.p, true);
-        
-        // 0x8000 is constant -- disables averaging of cal bit
-        xadc_write(&ret.p, XadcRegs::Config0, 0x8000 | (XadcFilter::Avg16 as u16) << 12);
+
+        // 0x0EF0 is constant -- disables alarms not present on this chip, enables calibration, enables all other alarms
+        // set to default before updating the sequence table
+        xadc_write(&ret.p, XadcRegs::Config1, ((XadcSeq::Default_ as u16) << 12) | 0x0EF0 );
+
+        // setup the sequencing registers
+        xadc_write(&ret.p, XadcRegs::Seq0, XadcSeq0Mask::VccBram as u16 | XadcSeq0Mask::Dedicated as u16 |
+            XadcSeq0Mask::VccAux as u16  | XadcSeq0Mask::VccInt as u16 |
+            XadcSeq0Mask::Temperature as u16 | XadcSeq0Mask::Calibration as u16 );
+        xadc_write(&ret.p, XadcRegs::Seq1, NOISE0 as u16 | NOISE1 as u16 |
+            CC1    as u16 | CC2 as u16 |
+            VBUS   as u16 );
+
+        xadc_write(&ret.p, XadcRegs::SeqAvg0, 
+            XadcSeq0Mask::VccBram as u16 | XadcSeq0Mask::Dedicated as u16 |
+            XadcSeq0Mask::VccAux as u16  | XadcSeq0Mask::VccInt as u16 |
+            XadcSeq0Mask::Temperature as u16); 
+        xadc_write(&ret.p, XadcRegs::SeqAvg1, 
+            CC1    as u16 | CC2 as u16 |
+            VBUS   as u16 );
+        // set the VP/VN input to differential input
+        xadc_write(&ret.p, XadcRegs::SeqMode0, XadcSeq0Mask::Dedicated as u16);
+
+        xadc_write(&ret.p, XadcRegs::SeqSettling0, 0);
+        xadc_write(&ret.p, XadcRegs::SeqSettling1, 0);
+
+        // once sequence is set, move to continuous mode. XADC is reset upon changing sequence mode
         // 0x0EF0 is constant -- disables alarms not present on this chip, enables calibration, enables all other alarms
         xadc_write(&ret.p, XadcRegs::Config1, ((XadcSeq::Continuous as u16) << 12) | 0x0EF0 );
+        // 0x8000 is constant -- disables averaging of cal bit
+        xadc_write(&ret.p, XadcRegs::Config0, 0x8000 | (XadcFilter::Avg16 as u16) << 12);
         // 0x0400 is constant -- sets DCLK to SYSCLK/4 = 25MHz
         xadc_write(&ret.p, XadcRegs::Config2, 0x0400 | (XadcPower::AllOn as u16) << 4); 
-
-        xadc_write(&ret.p, XadcRegs::Seq0, 0x4F01); // selects VCCBRAM, dedicated, VCCAUX, VCCINT, temp, cal
-        xadc_write(&ret.p, XadcRegs::Seq1, 0x0F01); // selects aux channels 11, 10, 9, 8, and 0
-
-        xadc_write(&ret.p, XadcRegs::SeqAvg0, 0x4F00); // average VCCBRAM, dedicated, VCCAUX, VCCINT
-        xadc_write(&ret.p, XadcRegs::SeqAvg1, 0x0E00); // average only channels 9, 10, 11 (not the noise channels)
 
         ret
     }
