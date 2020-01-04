@@ -152,6 +152,10 @@ pub struct Repl {
     efuse: EfuseApi,
     /// xadc object
     xadc: BtXadc,
+    /// noise arrays
+    noise0: [u16; 300],
+    noise1: [u16; 300],
+    update_noise: bool,
 }
 
 const PROMPT: &str = "bt> ";
@@ -171,6 +175,9 @@ impl Repl {
                 jtagphy: JtagUartPhy::new(),
                 efuse: EfuseApi::new(),
                 xadc: BtXadc::new(),
+                noise0: [0; 300],
+                noise1: [0; 300],
+                update_noise: false,
             }
         };
         r.text.add_text(&mut String::from("Awaiting input."));
@@ -191,6 +198,17 @@ impl Repl {
             self.input = String::from(PROMPT);
 
             self.parse_cmd(); // now try parsing the command
+        }
+    }
+
+    pub fn get_noise0(&self) -> [u16; 300] { self.noise0 }
+    pub fn get_noise1(&self) -> [u16; 300] { self.noise1 }
+    pub fn get_update_noise(&self) -> bool {self.update_noise}
+    pub fn sample_noise(&mut self) {
+        for i in 0..300 {
+            self.xadc.wait_update();
+            self.noise0[i] = self.xadc.noise0();
+            self.noise1[i] = self.xadc.noise1();
         }
     }
 
@@ -336,13 +354,13 @@ impl Repl {
                 self.text.add_text(&mut format!("vccaux: {:.3}V", (vccaux as f64) / 1365.0));
                 self.text.add_text(&mut format!("vccbram: {:.3}V", (vccbram as f64) / 1365.0));
                 self.text.add_text(&mut format!("temp: {:.2}C", ((temp as f64) * 0.12304) - 273.15));
-            } else if self.cmd.trim() == "sensor" {
+            } else if self.cmd.trim() == "sense" {
                 self.xadc.wait_update();
-                self.text.add_text(&mut format!("int: {:.3}V  aux: {:.3}V", (self.xadc.vccint() as f64) / 1365.0, (self.xadc.vccaux() as f64) / 1365.0));
+                self.text.add_text(&mut format!("int:  {:.3}V  aux: {:.3}V", (self.xadc.vccint() as f64) / 1365.0, (self.xadc.vccaux() as f64) / 1365.0));
                 self.text.add_text(&mut format!("bram: {:.3}V temp: {:.2}C", 
                                                 (self.xadc.vccbram() as f64) / 1365.0, 
                                                 ((self.xadc.temp() as f64) * 0.12304) - 273.15 ));
-                self.text.add_text(&mut format!("vbus: {}mV cc1: {}mV cc2: {}mV", 
+                self.text.add_text(&mut format!("vbus: {:4}mV cc1: {:4}mV cc2: {:4}mV", 
                                                 self.xadc.vbus_mv(),
                                                 self.xadc.cc1_mv(),
                                                 self.xadc.cc2_mv()  ));
@@ -350,8 +368,10 @@ impl Repl {
                 self.text.add_text(&mut format!("audio: 0x{:04x}", self.xadc.audio_sample() ));
             } else if self.cmd.trim() == "non" {
                 unsafe{ self.p.POWER.power.write(|w| w.noisebias().bit(true).noise().bits(3).self_().bit(true).state().bits(3) ); }
+                self.update_noise = true;
             } else if self.cmd.trim() == "noff" {
                 unsafe{ self.p.POWER.power.write(|w| w.noisebias().bit(false).noise().bits(0).self_().bit(true).state().bits(3) ); }
+                self.update_noise = false;
             } else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
@@ -441,7 +461,7 @@ fn main() -> ! {
     let mut gg_array: [u16; 4] = [0; 4];
     let mut line_height: i32 = 18;
     let left_margin: i32 = 10;
-    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 14), Point::new(size.width as i32, size.height as i32 - 1)));
+    let mut bouncy_ball: Bounce = Bounce::new(radius, Rectangle::new(Point::new(0, line_height * 21), Point::new(size.width as i32, size.height as i32 - 1)));
     let mut tx_index: usize = 0;
     let mut repl: Repl = Repl::new();
 
@@ -637,6 +657,38 @@ fn main() -> ! {
         .stroke_color(Some(BinaryColor::On))
         .translate(Point::new(left_margin, cur_line))
         .draw(&mut *display.lock());
+
+        cur_line += line_height;
+        const GRAPH_MARGIN: i32 = 18;
+        Line::<BinaryColor>::new(Point::new(GRAPH_MARGIN, cur_line + 128),
+        Point::new(size.width as i32 - GRAPH_MARGIN, cur_line + 128))
+        .stroke_color(Some(BinaryColor::On))
+        .draw(&mut *display.lock());
+        Line::<BinaryColor>::new(Point::new(GRAPH_MARGIN, cur_line),
+        Point::new(GRAPH_MARGIN, cur_line + 128))
+        .stroke_color(Some(BinaryColor::On))
+        .draw(&mut *display.lock());
+        if repl.get_update_noise() {
+            repl.sample_noise();
+            let noise0: [u16; 300] = repl.get_noise0();
+            let noise1: [u16; 300] = repl.get_noise1();
+            let mut x = GRAPH_MARGIN;
+            for index in 0..299 {
+                Line::<BinaryColor>::new(Point::new(x, cur_line + 64 - noise0[index] as i32 / 32),
+                Point::new(x+1, cur_line + 64 - noise0[index+1] as i32 / 32))
+                .stroke_color(Some(BinaryColor::On))
+                .draw(&mut *display.lock());
+                x = x + 1;
+            }
+            x = GRAPH_MARGIN;
+            for index in 0..299 {
+                Line::<BinaryColor>::new(Point::new(x, cur_line + 128 - noise1[index] as i32 / 32),
+                Point::new(x+1, cur_line + 128 - noise1[index+1] as i32 / 32))
+                .stroke_color(Some(BinaryColor::On))
+                .draw(&mut *display.lock());
+                x = x + 1;
+            }
+        }
 
         display.lock().flush().unwrap();
     }
