@@ -372,6 +372,8 @@ impl Repl {
             } else if self.cmd.trim() == "noff" {
                 unsafe{ self.p.POWER.power.write(|w| w.noisebias().bit(false).noise().bits(0).self_().bit(true).state().bits(3) ); }
                 self.update_noise = false;
+            } else if self.cmd.trim() == "flag" {
+                self.text.add_text(&mut format!("xadc flags: 0x{:04x}", self.xadc.flags()));
             } else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
@@ -664,6 +666,18 @@ fn main() -> ! {
         Point::new(size.width as i32 - GRAPH_MARGIN, cur_line + 128))
         .stroke_color(Some(BinaryColor::On))
         .draw(&mut *display.lock());
+        Line::<BinaryColor>::new(Point::new(GRAPH_MARGIN, cur_line + 64),
+        Point::new(size.width as i32 - GRAPH_MARGIN, cur_line + 64))
+        .stroke_color(Some(BinaryColor::On))
+        .draw(&mut *display.lock());
+        Line::<BinaryColor>::new(Point::new(GRAPH_MARGIN, cur_line + 0),
+        Point::new(size.width as i32 - GRAPH_MARGIN, cur_line + 0))
+        .stroke_color(Some(BinaryColor::On))
+        .draw(&mut *display.lock());
+        Line::<BinaryColor>::new(Point::new(size.width as i32 - GRAPH_MARGIN, cur_line),
+        Point::new(size.width as i32 - GRAPH_MARGIN, cur_line + 128))
+        .stroke_color(Some(BinaryColor::On))
+        .draw(&mut *display.lock());
         Line::<BinaryColor>::new(Point::new(GRAPH_MARGIN, cur_line),
         Point::new(GRAPH_MARGIN, cur_line + 128))
         .stroke_color(Some(BinaryColor::On))
@@ -674,16 +688,16 @@ fn main() -> ! {
             let noise1: [u16; 300] = repl.get_noise1();
             let mut x = GRAPH_MARGIN;
             for index in 0..299 {
-                Line::<BinaryColor>::new(Point::new(x, cur_line + 64 - noise0[index] as i32 / 32),
-                Point::new(x+1, cur_line + 64 - noise0[index+1] as i32 / 32))
+                Line::<BinaryColor>::new(Point::new(x, cur_line + 64 - noise0[index] as i32 / 64),
+                Point::new(x+1, cur_line + 64 - noise0[index+1] as i32 / 64))
                 .stroke_color(Some(BinaryColor::On))
                 .draw(&mut *display.lock());
                 x = x + 1;
             }
             x = GRAPH_MARGIN;
             for index in 0..299 {
-                Line::<BinaryColor>::new(Point::new(x, cur_line + 128 - noise1[index] as i32 / 32),
-                Point::new(x+1, cur_line + 128 - noise1[index+1] as i32 / 32))
+                Line::<BinaryColor>::new(Point::new(x, cur_line + 128 - noise1[index] as i32 / 64),
+                Point::new(x+1, cur_line + 128 - noise1[index+1] as i32 / 64))
                 .stroke_color(Some(BinaryColor::On))
                 .draw(&mut *display.lock());
                 x = x + 1;
