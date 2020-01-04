@@ -53,6 +53,7 @@ _io = [
         Subsignal("noise1",      Pins("B14"), IOStandard("LVCMOS33")),
         Subsignal("ana_vn",      Pins("K9")),  # no I/O standard as this is a dedicated pin
         Subsignal("ana_vp",      Pins("J10")), # no I/O standard as this is a dedicated pin
+        Subsignal("noise0_n",    Pins("A13"), IOStandard("LVCMOS33")),  # PATCH
      ),
 
     ("lpclk", 0, Pins("N15"), IOStandard("LVCMOS18")),  # wifi_lpclk
@@ -61,7 +62,7 @@ _io = [
     ("power", 0,
         Subsignal("audio_on",     Pins("G13"), IOStandard("LVCMOS33")),
         Subsignal("fpga_sys_on",  Pins("N13"), IOStandard("LVCMOS18")),
-        Subsignal("noisebias_on", Pins("A13"), IOStandard("LVCMOS33")),
+        # Subsignal("noisebias_on", Pins("A13"), IOStandard("LVCMOS33")),  # PATCH
         Subsignal("allow_up5k_n", Pins("U7"), IOStandard("LVCMOS18")),
         Subsignal("pwr_s0",       Pins("U6"), IOStandard("LVCMOS18")),
         Subsignal("pwr_s1",       Pins("L13"), IOStandard("LVCMOS18")),
@@ -316,7 +317,7 @@ class BtPower(Module, AutoCSR, AutoDoc):
             # Ensure SRAM isolation during reset (CE & ZZ = 1 by pull-ups)
             pads.pwr_s0.eq(self.power.fields.state[0] & ~ResetSignal()),
             pads.pwr_s1.eq(self.power.fields.state[1]),
-            pads.noisebias_on.eq(self.power.fields.noisebias),
+            # pads.noisebias_on.eq(self.power.fields.noisebias),  # PATCH
             pads.noise_on.eq(self.power.fields.noise),
         ]
 
@@ -460,7 +461,7 @@ class BetrustedSoC(SoCCore):
                                      analog.noise1, analog.vbus_div, analog.usbc_cc1, analog.usbc_cc2, # 8,9,10,11
                                      Signal(4, reset=0),  # 12,13,14,15
                                 )),
-            analog_pads.vauxn.eq(0),
+            analog_pads.vauxn.eq(Cat(analog.noise0_n, Signal(15, reset=0))), # PATCH
             analog_pads.vp.eq(analog.ana_vp),
             analog_pads.vn.eq(analog.ana_vn),
         ]
