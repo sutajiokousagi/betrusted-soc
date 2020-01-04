@@ -35,6 +35,8 @@ pub enum XadcRegs {
     MinVccAux = 0x26,
     MinVccBram = 0x27,
 
+    Flag = 0x3F,
+
     Config0 = 0x40,
     Config1 = 0x41,
     Config2 = 0x42,
@@ -240,7 +242,7 @@ impl BtXadc {
         // 0x8000 is constant -- disables averaging of cal bit
         xadc_write(&ret.p, XadcRegs::Config0, 0x8000 | (XadcFilter::Avg16 as u16) << 12);
         // 0x0400 is constant -- sets DCLK to SYSCLK/4 = 25MHz
-        xadc_write(&ret.p, XadcRegs::Config2, 0x0400 | (XadcPower::AllOn as u16) << 4); 
+        xadc_write(&ret.p, XadcRegs::Config2, 0x0400 | (XadcPower::AdcbOff as u16) << 4); 
 
         ret
     }
@@ -288,4 +290,5 @@ impl BtXadc {
     pub fn temp(&mut self) -> u16 { xadc_read(&self.p, XadcRegs::Temperature) >> 4 }
     pub fn audio_sample(&mut self) -> u16 { xadc_read(&self.p, XadcRegs::Dedicated) >> 4 }
 
+    pub fn flags(&mut self) -> u16 { xadc_read(&self.p, XadcRegs::Flag) }
 }
