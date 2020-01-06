@@ -221,17 +221,17 @@ class Platform(XilinxPlatform):
             "set_property CONFIG_VOLTAGE 1.8 [current_design]",
             "set_property CFGBVS GND [current_design]",
             "set_property BITSTREAM.CONFIG.CONFIGRATE 66 [current_design]",
-            "set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 2 [current_design]",
+            "set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 1 [current_design]",
         ]
         if encrypt:
             self.toolchain.bitstream_commands += [
                 "set_property BITSTREAM.ENCRYPTION.ENCRYPT YES [current_design]",
                 "set_property BITSTREAM.ENCRYPTION.ENCRYPTKEYSELECT eFUSE [current_design]",
-                "set_property BITSTREAM.ENCRYPTION.KEYFILE ../../dummy.nky"
+                "set_property BITSTREAM.ENCRYPTION.KEYFILE ../../dummy.nky [current_design]"
             ]
 
         self.toolchain.additional_commands = \
-            ["write_cfgmem -verbose -force -format bin -interface spix2 -size 64 "
+            ["write_cfgmem -verbose -force -format bin -interface spix1 -size 64 "
              "-loadbit \"up 0x0 {build_name}.bit\" -file {build_name}.bin"]
         self.programmer = programmer
 
@@ -459,7 +459,8 @@ class BetrustedSoC(SoCCore):
         # Info -------------------------------------------------------------------------------------
         # XADC analog interface---------------------------------------------------------------------
 
-        analog_pads = Record([("vauxp", 16), ("vauxn", 16), ("vp", 1), ("vn", 1)])
+        from litex.soc.cores.xadc import analog_layout
+        analog_pads = Record(analog_layout)
         analog = platform.request("analog")
         self.comb += [
             # NOTE - if part is changed to XC7S25, the pin-to-channel mappings change
