@@ -22,4 +22,6 @@ class Info(Module, AutoCSR):
 
         if "xc7" in platform.device:
             self.submodules.xadc = xadc.XADC(analog_pads)
+            if analog_pads != None:
+                self.xadc.expose_drp()
 
