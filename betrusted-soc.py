@@ -203,7 +203,7 @@ _io_uart_debug_swapped = [
 # Platform -----------------------------------------------------------------------------------------
 
 class Platform(XilinxPlatform):
-    def __init__(self, toolchain="vivado", programmer="vivado", part="50"):
+    def __init__(self, toolchain="vivado", programmer="vivado", part="50", encrypt=False):
         part = "xc7s" + part + "-csga324-1il"
         XilinxPlatform.__init__(self, part, _io, toolchain=toolchain)
 
@@ -221,10 +221,17 @@ class Platform(XilinxPlatform):
             "set_property CONFIG_VOLTAGE 1.8 [current_design]",
             "set_property CFGBVS GND [current_design]",
             "set_property BITSTREAM.CONFIG.CONFIGRATE 66 [current_design]",
-            "set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 1 [current_design]",
+            "set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 2 [current_design]",
         ]
+        if encrypt:
+            self.toolchain.bitstream_commands += [
+                "set_property BITSTREAM.ENCRYPTION.ENCRYPT YES [current_design]",
+                "set_property BITSTREAM.ENCRYPTION.ENCRYPTKEYSELECT eFUSE [current_design]",
+                "set_property BITSTREAM.ENCRYPTION.KEYFILE ../../dummy.nky"
+            ]
+
         self.toolchain.additional_commands = \
-            ["write_cfgmem -verbose -force -format bin -interface spix1 -size 64 "
+            ["write_cfgmem -verbose -force -format bin -interface spix2 -size 64 "
              "-loadbit \"up 0x0 {build_name}.bit\" -file {build_name}.bin"]
         self.programmer = programmer
 
@@ -451,8 +458,8 @@ class BetrustedSoC(SoCCore):
 
         # Info -------------------------------------------------------------------------------------
         # XADC analog interface---------------------------------------------------------------------
-        from litex.soc.cores.xadc import analog_layout
-        analog_pads = Record(analog_layout)
+
+        analog_pads = Record([("vauxp", 16), ("vauxn", 16), ("vp", 1), ("vn", 1)])
         analog = platform.request("analog")
         self.comb += [
             # NOTE - if part is changed to XC7S25, the pin-to-channel mappings change
@@ -594,6 +601,9 @@ def main():
     parser.add_argument(
         "-u", "--uart-swap", default=False, action="store_true", help="swap UART pins (GDB debug bridge <-> console)"
     )
+    parser.add_argument(
+        "-e", "--encrypt", default=False, action="store_true", help="Format output for encryption using the dummy key. Image is re-encrypted at sealing time with a secure key."
+    )
 
     args = parser.parse_args()
     compile_gateware = True
@@ -603,7 +613,7 @@ def main():
         compile_gateware = False
         compile_software = False
 
-    platform = Platform()
+    platform = Platform(encrypt=args.encrypt)
     if args.uart_swap:
         platform.add_extension(_io_uart_debug_swapped)
     else:
