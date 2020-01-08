@@ -19,6 +19,8 @@ extern "C" {
 #[macro_use]
 extern crate alloc;
 extern crate alloc_riscv;
+extern crate xous_nommu;
+use xous_nommu::syscalls::*;
 
 use alloc_riscv::RiscvHeap;
 
@@ -429,6 +431,10 @@ impl TextArea {
 
 #[entry]
 fn main() -> ! {
+    // Initialize the no-MMU version of Xous, which will give us
+    // basic access to tasks and interrupts.
+    xous_nommu::init();
+
     let p = betrusted_pac::Peripherals::take().unwrap();
     com_txrx(&p, 0x9003 as u16);  // 0x90cc specifies power set command. bit 0 set means EC stays on; bit 1 means power SoC on
     unsafe{ p.POWER.power.write(|w| w.self_().bit(true).state().bits(3)); }

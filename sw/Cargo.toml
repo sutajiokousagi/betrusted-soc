@@ -17,6 +17,7 @@ embedded-graphics = { path = "embedded-graphics/embedded-graphics" }
 efuse-ecc = { path = "efuse-ecc" }
 efuse-api = { path = "efuse-api" }
 jtag = { path = "jtag" }
+xous-nommu = { path = "xous-nommu" }
 
 # this lets you use `cargo fix`!
 [[bin]]
