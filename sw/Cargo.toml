@@ -8,8 +8,8 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-riscv = "0.5.4"
-riscv-rt = "0.6.1"
+vexriscv = "0.0.2"
+betrusted-rt = "0.0.1"
 betrusted-pac = { path = "betrusted-pac" }
 betrusted-hal = { path = "betrusted-hal" }
 alloc-riscv = { path = "alloc-riscv" }

@@ -6,7 +6,7 @@
 #![no_std]
 
 use core::panic::PanicInfo;
-use riscv_rt::entry;
+use betrusted_rt::entry;
 
 // pull in external symbols to define heap start and stop
 // defined in memory.x
