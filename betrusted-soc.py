@@ -386,8 +386,70 @@ class BtSeed(Module, AutoDoc, AutoCSR):
           seed_reset = rng.getrandbits(64)
         self.seed = CSRStatus(64, name="seed", description="Seed used for the build", reset=seed_reset)
 
+# RomTest -----------------------------------------------------------------------------------------
 
-# BtSeed -------------------------------------------------------------------------------------------
+class RomTest(Module, AutoDoc, AutoCSR):
+    def __init__(self, platform):
+        self.intro = ModuleDoc("""Test for bitstream insertion of BRAM initialization contents""")
+        platform.toolchain.attr_translate["KEEP"] = ("KEEP", "TRUE")
+        platform.toolchain.attr_translate["DONT_TOUCH"] = ("DONT_TOUCH", "TRUE")
+
+        import binascii
+        self.address = CSRStorage(8, name="address", description="address for ROM")
+        self.data = CSRStatus(32, name="data", description="data from ROM")
+
+        rng = SystemRandom()
+        with open("rom.db", "w") as f:
+            for bit in range(0,32):
+                lutsel = Signal(4)
+                for lut in range(4):
+                    if lut == 0:
+                        lutname = 'A'
+                    elif lut == 1:
+                        lutname = 'B'
+                    elif lut == 2:
+                        lutname = 'C'
+                    else:
+                        lutname = 'D'
+                    romval = rng.getrandbits(64)
+                    # print("rom bit ", str(bit), lutname, ": ", binascii.hexlify(romval.to_bytes(8, byteorder='big')))
+                    rom_name = "KEYROM" + str(bit) + lutname
+                    if bit % 2 == 0:
+                        platform.toolchain.attr_translate[rom_name] = ("LOC", "SLICE_X36Y" + str(50 + bit // 2))
+                    else:
+                        platform.toolchain.attr_translate[rom_name] = ("LOC", "SLICE_X37Y" + str(50 + bit // 2))
+                    platform.toolchain.attr_translate[rom_name + 'BEL'] = ("BEL", lutname + '6LUT')
+                    platform.toolchain.attr_translate[rom_name + 'LOCK'] = ( "LOCK_PINS", "I5:A6, I4:A5, I3:A4, I2:A3, I1:A2, I0:A1" )
+                    self.specials += [
+                        Instance( "LUT6",
+                                  name=rom_name,
+                                  # p_INIT=0x0000000000000000000000000000000000000000000000000000000000000000,
+                                  p_INIT=romval,
+                                  i_I0= self.address.storage[0],
+                                  i_I1= self.address.storage[1],
+                                  i_I2= self.address.storage[2],
+                                  i_I3= self.address.storage[3],
+                                  i_I4= self.address.storage[4],
+                                  i_I5= self.address.storage[5],
+                                  o_O= lutsel[lut],
+                                  attr=("KEEP", "DONT_TOUCH", rom_name, rom_name + 'BEL', rom_name + 'LOCK')
+                                  )
+                        # X36Y99 and counting down
+                    ]
+                    # record the ROM LUT locations in a DB and annotate the initial random value given
+                    f.write("KEYROM " + str(bit) + ' ' + lutname + ' ' + platform.toolchain.attr_translate[rom_name][1] +
+                            ' ' + str(binascii.hexlify(romval.to_bytes(8, byteorder='big'))) + '\n')
+            self.comb += [
+                If( self.address.storage[6:] == 0,
+                    self.data.status[bit].eq(lutsel[0]))
+                .Elif(self.address.storage[6:] == 1,
+                      self.data.status[bit].eq(lutsel[1]))
+                .Elif(self.address.storage[6:] == 2,
+                      self.data.status[bit].eq(lutsel[2]))
+                .Else(self.data.status[bit].eq(lutsel[3]))
+            ]
+
+# System constants ---------------------------------------------------------------------------------
 
 boot_offset    = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
 bios_size      = 0x8000
@@ -563,6 +625,9 @@ class BetrustedSoC(SoCCore):
         self.submodules.seed = BtSeed()
         self.add_csr("seed")
 
+        # ROM test ---------------------------------------------------------------------------------
+        self.submodules.romtest = RomTest(platform)
+        self.add_csr("romtest")
 
         ## TODO: audio, wide-width/fast SPINOR, sdcard
 """
