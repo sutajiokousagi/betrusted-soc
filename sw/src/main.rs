@@ -234,7 +234,7 @@ impl Repl {
         if self.cmd.len() == 0 {
             return;
         } else {
-            if self.cmd.trim() == "shutdown" {
+            if self.cmd.trim() == "shutdown" || self.cmd.trim() == "shut" {
                 self.text.add_text(&mut String::from("Shutting down system"));
                 self.power = false; // the main UI loop needs to pick this up and render the display accordingly
             } else if self.cmd.trim() == "buzz" {
