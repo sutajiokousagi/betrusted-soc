@@ -230,6 +230,15 @@ impl Repl {
         self.power = false;
     }
 
+    pub fn rom_read(&mut self, adr: u8) -> u32 {
+        unsafe{ self.p.ROMTEST.address.write(|w| w.bits(adr as u32)); }
+
+        self.p.ROMTEST.data0.read().bits() as u32 |
+        (self.p.ROMTEST.data1.read().bits() as u32) << 8 |
+        (self.p.ROMTEST.data2.read().bits() as u32) << 16 |
+        (self.p.ROMTEST.data3.read().bits() as u32) << 24
+    }
+
     pub fn parse_cmd(&mut self) {
         if self.cmd.len() == 0 {
             return;
@@ -376,6 +385,24 @@ impl Repl {
                 self.update_noise = false;
             } else if self.cmd.trim() == "flag" {
                 self.text.add_text(&mut format!("xadc flags: 0x{:04x}", self.xadc.flags()));
+            } else if self.cmd.trim() == "rom" || self.cmd.trim() == "r" {
+                let mut line: [u32; 3] = [0; 3];
+                for adr in 0..3 {
+                    line[adr] = self.rom_read(adr as u8);
+                }
+                self.text.add_text(&mut format!("0x00: 0x{:08x} 0x{:08x} 0x{:08x}", line[0], line[1], line[2] ));
+                for adr in 0..3 {
+                    line[adr] = self.rom_read((adr + 0x40) as u8);
+                }
+                self.text.add_text(&mut format!("0x40: 0x{:08x} 0x{:08x} 0x{:08x}", line[0], line[1], line[2] ));
+                for adr in 0..3 {
+                    line[adr] = self.rom_read((adr + 0x80) as u8);
+                }
+                self.text.add_text(&mut format!("0x80: 0x{:08x} 0x{:08x} 0x{:08x}", line[0], line[1], line[2] ));
+                for adr in 0..3 {
+                    line[adr] = self.rom_read((adr + 0xFC) as u8);
+                }
+                self.text.add_text(&mut format!("0xFC: 0x{:08x} 0x{:08x} 0x{:08x}", line[0], line[1], line[2] ));
             } else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
