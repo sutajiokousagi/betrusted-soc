@@ -203,7 +203,7 @@ _io_uart_debug_swapped = [
 # Platform -----------------------------------------------------------------------------------------
 
 class Platform(XilinxPlatform):
-    def __init__(self, toolchain="vivado", programmer="vivado", part="50", encrypt=False):
+    def __init__(self, toolchain="vivado", programmer="vivado", part="50", encrypt=False, make_mod=False):
         part = "xc7s" + part + "-csga324-1il"
         XilinxPlatform.__init__(self, part, _io, toolchain=toolchain)
 
@@ -230,10 +230,29 @@ class Platform(XilinxPlatform):
                 "set_property BITSTREAM.ENCRYPTION.KEYFILE ../../dummy.nky [current_design]"
             ]
 
-        self.toolchain.additional_commands = \
+        self.toolchain.additional_commands += \
             ["write_cfgmem -verbose -force -format bin -interface spix1 -size 64 "
              "-loadbit \"up 0x0 {build_name}.bit\" -file {build_name}.bin"]
         self.programmer = programmer
+
+        if make_mod:
+            for bit in range(0, 32):
+                for lut in range(4):
+                    if lut == 0:
+                        lutname = 'A'
+                    elif lut == 1:
+                        lutname = 'B'
+                    elif lut == 2:
+                        lutname = 'C'
+                    else:
+                        lutname = 'D'
+
+                    self.toolchain.additional_commands += ["set_property INIT 64'hA6C355555555A6C3 [get_cells KEYROM" + str(bit) + lutname + "]"]
+
+            self.toolchain.additional_commands += ["write_bitstream -force top-mod.bit"]
+            self.toolchain.additional_commands += \
+                ["write_cfgmem -verbose -force -format bin -interface spix1 -size 64 "
+                 "-loadbit \"up 0x0 {build_name}-mod.bit\" -file {build_name}-mod.bin"]
 
     def create_programmer(self):
         if self.programmer == "vivado":
@@ -414,6 +433,7 @@ class RomTest(Module, AutoDoc, AutoCSR):
                     romval = rng.getrandbits(64)
                     # print("rom bit ", str(bit), lutname, ": ", binascii.hexlify(romval.to_bytes(8, byteorder='big')))
                     rom_name = "KEYROM" + str(bit) + lutname
+                    # X36Y99 and counting down
                     if bit % 2 == 0:
                         platform.toolchain.attr_translate[rom_name] = ("LOC", "SLICE_X36Y" + str(50 + bit // 2))
                     else:
@@ -434,20 +454,19 @@ class RomTest(Module, AutoDoc, AutoCSR):
                                   o_O= lutsel[lut],
                                   attr=("KEEP", "DONT_TOUCH", rom_name, rom_name + 'BEL', rom_name + 'LOCK')
                                   )
-                        # X36Y99 and counting down
                     ]
                     # record the ROM LUT locations in a DB and annotate the initial random value given
                     f.write("KEYROM " + str(bit) + ' ' + lutname + ' ' + platform.toolchain.attr_translate[rom_name][1] +
                             ' ' + str(binascii.hexlify(romval.to_bytes(8, byteorder='big'))) + '\n')
-            self.comb += [
-                If( self.address.storage[6:] == 0,
-                    self.data.status[bit].eq(lutsel[0]))
-                .Elif(self.address.storage[6:] == 1,
-                      self.data.status[bit].eq(lutsel[1]))
-                .Elif(self.address.storage[6:] == 2,
-                      self.data.status[bit].eq(lutsel[2]))
-                .Else(self.data.status[bit].eq(lutsel[3]))
-            ]
+                self.comb += [
+                    If( self.address.storage[6:] == 0,
+                        self.data.status[bit].eq(lutsel[2]))
+                    .Elif(self.address.storage[6:] == 1,
+                          self.data.status[bit].eq(lutsel[3]))
+                    .Elif(self.address.storage[6:] == 2,
+                          self.data.status[bit].eq(lutsel[0]))
+                    .Else(self.data.status[bit].eq(lutsel[1]))
+                ]
 
 # System constants ---------------------------------------------------------------------------------
 
