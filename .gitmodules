@@ -20,3 +20,9 @@
 	path = sw/embedded-graphics
 	url = git@github.com:betrusted-io/embedded-graphics.git
 	branch = master
+[submodule "deps/encrypt-bitstream-python"]
+	path = deps/encrypt-bitstream-python
+	url = git@github.com:betrusted-io/encrypt-bitstream-python.git
+[submodule "deps/rom-locate"]
+	path = deps/rom-locate
+	url = git@github.com:betrusted-io/rom-locate.git
