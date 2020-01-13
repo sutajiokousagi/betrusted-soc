@@ -235,7 +235,10 @@ class Platform(XilinxPlatform):
              "-loadbit \"up 0x0 {build_name}.bit\" -file {build_name}.bin"]
         self.programmer = programmer
 
+        # this routine retained in case we have to re-explore the bitstream to find the location of the ROM LUTs
         if make_mod:
+            # build a version of the bitstream with a different INIT value for the ROM lut, so the offset frame can
+            # be discovered by diffing
             for bit in range(0, 32):
                 for lut in range(4):
                     if lut == 0:
@@ -249,10 +252,7 @@ class Platform(XilinxPlatform):
 
                     self.toolchain.additional_commands += ["set_property INIT 64'hA6C355555555A6C3 [get_cells KEYROM" + str(bit) + lutname + "]"]
 
-            self.toolchain.additional_commands += ["write_bitstream -force top-mod.bit"]
-            self.toolchain.additional_commands += \
-                ["write_cfgmem -verbose -force -format bin -interface spix1 -size 64 "
-                 "-loadbit \"up 0x0 {build_name}-mod.bit\" -file {build_name}-mod.bin"]
+            self.toolchain.additional_commands += ["write_bitstream -bin_file -force top-mod.bit"]
 
     def create_programmer(self):
         if self.programmer == "vivado":
@@ -689,6 +689,9 @@ def main():
     parser.add_argument(
         "-e", "--encrypt", default=False, action="store_true", help="Format output for encryption using the dummy key. Image is re-encrypted at sealing time with a secure key."
     )
+    parser.add_argument(
+        "-p", "--patch-key", help="Patch bitstream with a key file", type=str
+    )
 
     args = parser.parse_args()
     compile_gateware = True
@@ -697,6 +700,13 @@ def main():
     if args.document_only:
         compile_gateware = False
         compile_software = False
+
+    patch = False
+    if args.patch_key != None:
+        if args.encrypt == False:
+            print("Invalid argument combo, --patch-key requires --encrypt.")
+            exit(0)
+        patch = True
 
     platform = Platform(encrypt=args.encrypt)
     if args.uart_swap:
