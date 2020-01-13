@@ -10,6 +10,8 @@ LX_DEPENDENCIES = ["riscv", "vivado"]
 # Import lxbuildenv to integrate the deps/ directory
 import lxbuildenv
 import lxsocdoc
+from pathlib import Path
+import subprocess
 
 from random import SystemRandom
 import argparse
@@ -689,9 +691,6 @@ def main():
     parser.add_argument(
         "-e", "--encrypt", default=False, action="store_true", help="Format output for encryption using the dummy key. Image is re-encrypted at sealing time with a secure key."
     )
-    parser.add_argument(
-        "-p", "--patch-key", help="Patch bitstream with a key file", type=str
-    )
 
     args = parser.parse_args()
     compile_gateware = True
@@ -700,13 +699,6 @@ def main():
     if args.document_only:
         compile_gateware = False
         compile_software = False
-
-    patch = False
-    if args.patch_key != None:
-        if args.encrypt == False:
-            print("Invalid argument combo, --patch-key requires --encrypt.")
-            exit(0)
-        patch = True
 
     platform = Platform(encrypt=args.encrypt)
     if args.uart_swap:
@@ -719,6 +711,19 @@ def main():
     soc.do_exit(vns)
     lxsocdoc.generate_docs(soc, "build/documentation", note_pulses=True)
     lxsocdoc.generate_svd(soc, "build/software", name="Betrusted SoC", description="Primary UI Core for Betrusted", filename="soc.svd", vendor="Betrusted-IO")
+
+    if args.encrypt:
+        # check if we need to re-encrypt to a set key
+        # my.nky -- indicates the fuses have been burned on the target device, and needs re-encryption
+        # keystore.bin -- indicates we want to initialize the on-chip key ROM with a set of known values
+        if Path('my.nky').is_file():
+            keystore_args = ''
+            if Path('keystore.bin').is_file():
+                with open('keystore.patch', 'w') as patchfile:
+                    subprocess.call(['./key2bits.py', '-k../../keystore.bin', '-r../../rom.db'], cwd='deps/rom-locate', stdout=patchfile)
+                    keystore_args = '-pkeystore.patch'
+            enc = ['deps/encrypt-bitstream-python/encrypt-bitstream.py', '-fbuild/gateware/top.bin', '-idummy.nky', '-kmy.nky', '-oencrypted'] + [keystore_args]
+            subprocess.call(enc)
 
 if __name__ == "__main__":
     main()
