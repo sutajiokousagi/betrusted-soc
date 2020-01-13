@@ -717,8 +717,10 @@ def main():
         # my.nky -- indicates the fuses have been burned on the target device, and needs re-encryption
         # keystore.bin -- indicates we want to initialize the on-chip key ROM with a set of known values
         if Path('my.nky').is_file():
+            print('Found my.nky, re-encrypting binary to the specified fuse settings.')
             keystore_args = ''
             if Path('keystore.bin').is_file():
+                print('Found keystore.bin, patching bitstream to contain specified keystore values.')
                 with open('keystore.patch', 'w') as patchfile:
                     subprocess.call(['./key2bits.py', '-k../../keystore.bin', '-r../../rom.db'], cwd='deps/rom-locate', stdout=patchfile)
                     keystore_args = '-pkeystore.patch'
