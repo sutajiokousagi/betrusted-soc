@@ -75,6 +75,8 @@ use alloc::string::String;
 use jtag::*;
 use efuse_api::*;
 
+use rom_inject::*;
+
 pub struct Bounce {
     vector: Point,
     radius: u32,
@@ -240,6 +242,8 @@ impl Repl {
     }
 
     pub fn parse_cmd(&mut self) {
+        let rom: [u32; 256] = [0; 256];
+
         if self.cmd.len() == 0 {
             return;
         } else {
@@ -403,6 +407,9 @@ impl Repl {
                     line[adr] = self.rom_read((adr + 0xFC) as u8);
                 }
                 self.text.add_text(&mut format!("0xFC: 0x{:08x} 0x{:08x} 0x{:08x}", line[0], line[1], line[2] ));
+            } else if self.cmd.trim() == "inject" {
+                let (val, inv) = patch_frame(0x35e, 0, rom);
+                self.text.add_text(&mut format!("inject: 0x35e, 0, ROM: 0x{:08x}/0x{:08x}", val.unwrap(), inv.unwrap() ));
             } else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
