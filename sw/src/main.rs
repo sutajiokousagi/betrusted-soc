@@ -209,11 +209,44 @@ impl Repl {
     pub fn get_noise1(&self) -> [u16; 300] { self.noise1 }
     pub fn get_update_noise(&self) -> bool {self.update_noise}
     pub fn sample_noise(&mut self) {
+        self.xadc.noise_only(true); // cut out other round-robin sensor readings
         for i in 0..300 {
             self.xadc.wait_update();
             self.noise0[i] = self.xadc.noise0();
             self.noise1[i] = self.xadc.noise1();
         }
+        self.xadc.noise_only(false); // bring them back
+    }
+    /// here's a thing to be aware of: we are sampling the noise well under its
+    /// total bandwidth. Above a certain rate, the noise will look less random because
+    /// you have exceeded the bandwidth of the generator. The configuration of the XADC
+    /// is about 2-5x under the bandwidth of the noise, so this should effectively "whiten"
+    /// the noise at the expense of absolute noise bitrate.
+    pub fn dump_noise(&mut self) {
+        let mut noise: Vec<u16> = Vec::new();
+
+        self.xadc.noise_only(true); // cut out other round-robin sensor readings
+
+        for _ in 0..100_000 {
+            self.xadc.wait_update();
+            noise.push(self.xadc.noise0() as u16);
+        }
+        self.uart_tx_u8(0x4E); // 'N'
+        self.uart_tx_u8(0x4F); // 'O'
+        for n in noise {
+            self.uart_tx_u8((n & 0xFF) as u8);
+            self.uart_tx_u8(((n >> 8) & 0xFF) as u8);
+        }
+        self.uart_tx_u8(0x4F); // 'O'
+        self.uart_tx_u8(0x4E); // 'N'
+
+        self.xadc.noise_only(false); // bring them back
+    }
+
+    pub fn uart_tx_u8(&mut self, c: u8) {
+        while self.p.UART.txfull.read().bits() != 0 {}
+        unsafe { self.p.UART.rxtx.write(|w| w.bits(c as u32)); }
+        unsafe { self.p.UART.ev_pending.write(|w| w.bits(1)); }
     }
 
     pub fn get_cmd(&self) -> String {
@@ -410,6 +443,11 @@ impl Repl {
             } else if self.cmd.trim() == "inject" {
                 let (val, inv) = patch_frame(0x35e, 0, rom);
                 self.text.add_text(&mut format!("inject: 0x35e, 0, ROM: 0x{:08x}/0x{:08x}", val.unwrap(), inv.unwrap() ));
+            } else if self.cmd.trim() == "dn" { // dump noise
+                unsafe{ self.p.POWER.power.write(|w| w.noisebias().bit(true).noise().bits(3).self_().bit(true).state().bits(3) ); }
+                delay_ms(&self.p, 200); // let the noise source stabilize
+                self.dump_noise();
+                unsafe{ self.p.POWER.power.write(|w| w.noisebias().bit(false).noise().bits(0).self_().bit(true).state().bits(3) ); }
             } else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
