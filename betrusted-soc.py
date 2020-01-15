@@ -712,6 +712,11 @@ def main():
     lxsocdoc.generate_docs(soc, "build/documentation", note_pulses=True)
     lxsocdoc.generate_svd(soc, "build/software", name="Betrusted SoC", description="Primary UI Core for Betrusted", filename="soc.svd", vendor="Betrusted-IO")
 
+    # generate the rom-inject library code
+    with open('sw/rom-inject/src/lib.rs', 'w') as libfile:
+        subprocess.call(['./key2bits.py', '-c', '-k../../keystore.bin', '-r../../rom.db'], cwd='deps/rom-locate', stdout=libfile)
+
+    # now re-encrypt the binary if needed
     if args.encrypt:
         # check if we need to re-encrypt to a set key
         # my.nky -- indicates the fuses have been burned on the target device, and needs re-encryption
