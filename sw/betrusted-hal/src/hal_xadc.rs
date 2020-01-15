@@ -247,6 +247,60 @@ impl BtXadc {
         ret
     }
 
+    pub fn noise_only(&mut self, noise_on: bool) {
+        const NOISE0: XadcSeq1Mask = XadcSeq1Mask::Vaux0;
+        const NOISE1: XadcSeq1Mask = XadcSeq1Mask::Vaux8;
+        const CC1: XadcSeq1Mask = XadcSeq1Mask::Vaux10;
+        const CC2: XadcSeq1Mask = XadcSeq1Mask::Vaux11;
+        const VBUS: XadcSeq1Mask = XadcSeq1Mask::Vaux9;
+    
+        // 0x0EF0 is constant -- disables alarms not present on this chip, enables calibration, enables all other alarms
+        // set to default before updating the sequence table
+        xadc_write(&self.p, XadcRegs::Config1, ((XadcSeq::Default_ as u16) << 12) | 0x0EF0 );
+
+        // setup the sequencing registers
+        if noise_on {
+            xadc_write(&self.p, XadcRegs::Seq0, 0 );
+            xadc_write(&self.p, XadcRegs::Seq1, NOISE0 as u16 | NOISE1 as u16 );
+    
+            // once sequence is set, move to continuous mode. XADC is reset upon changing sequence mode
+            // 0x0EF0 is constant -- disables alarms not present on this chip, enables calibration, enables all other alarms
+            xadc_write(&self.p, XadcRegs::Config1, ((XadcSeq::Continuous as u16) << 12) | 0x0EF0 );
+            // 0x8000 is constant -- disables averaging of cal bit
+            xadc_write(&self.p, XadcRegs::Config0, 0x8000 | (XadcFilter::Avg16 as u16) << 12);
+            // 0x0400 is constant -- sets DCLK to SYSCLK/4 = 25MHz
+            xadc_write(&self.p, XadcRegs::Config2, 0x0400 | (XadcPower::AdcbOff as u16) << 4); 
+        } else {
+            xadc_write(&self.p, XadcRegs::Seq0, XadcSeq0Mask::VccBram as u16 | XadcSeq0Mask::Dedicated as u16 |
+                XadcSeq0Mask::VccAux as u16  | XadcSeq0Mask::VccInt as u16 |
+                XadcSeq0Mask::Temperature as u16 | XadcSeq0Mask::Calibration as u16 );
+            xadc_write(&self.p, XadcRegs::Seq1, NOISE0 as u16 | NOISE1 as u16 |
+                CC1    as u16 | CC2 as u16 |
+                VBUS   as u16 );
+    
+            xadc_write(&self.p, XadcRegs::SeqAvg0, 
+                XadcSeq0Mask::VccBram as u16 | XadcSeq0Mask::Dedicated as u16 |
+                XadcSeq0Mask::VccAux as u16  | XadcSeq0Mask::VccInt as u16 |
+                XadcSeq0Mask::Temperature as u16); 
+            xadc_write(&self.p, XadcRegs::SeqAvg1, 
+                CC1    as u16 | CC2 as u16 |
+                VBUS   as u16 );
+            // set the VP/VN input to differential input
+            xadc_write(&self.p, XadcRegs::SeqMode0, XadcSeq0Mask::Dedicated as u16);
+    
+            xadc_write(&self.p, XadcRegs::SeqSettling0, 0);
+            xadc_write(&self.p, XadcRegs::SeqSettling1, 0);
+    
+            // once sequence is set, move to continuous mode. XADC is reset upon changing sequence mode
+            // 0x0EF0 is constant -- disables alarms not present on this chip, enables calibration, enables all other alarms
+            xadc_write(&self.p, XadcRegs::Config1, ((XadcSeq::Continuous as u16) << 12) | 0x0EF0 );
+            // 0x8000 is constant -- disables averaging of cal bit
+            xadc_write(&self.p, XadcRegs::Config0, 0x8000 | (XadcFilter::Avg16 as u16) << 12);
+            // 0x0400 is constant -- sets DCLK to SYSCLK/4 = 25MHz
+            xadc_write(&self.p, XadcRegs::Config2, 0x0400 | (XadcPower::AdcbOff as u16) << 4); 
+        }
+    }
+
     pub fn set_mode(&mut self, mode: BtXadcMode) {
         self.mode = mode;
     }
