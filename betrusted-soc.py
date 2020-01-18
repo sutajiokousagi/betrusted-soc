@@ -470,6 +470,25 @@ class RomTest(Module, AutoDoc, AutoCSR):
                     .Else(self.data.status[bit].eq(lutsel[1]))
                 ]
 
+class Aes(Module, AutoDoc, AutoCSR):
+    def __init__(self, platform):
+        print("coming soon")
+
+class GpioTest(Module, AutoCSR):
+    def __init__(self, platform):
+        self.data_in_d = CSRStorage(32)
+        self.direct_out_q = CSRStatus(32)
+        self.specials += Instance("gpio_reg_top",
+                                  i_clk_i = ClockSignal(),
+                                  i_rst_ni = ~ResetSignal(),
+                                  o_data_in_d = self.direct_out_q.status,
+                                  i_direct_out_q = self.data_in_d.storage,
+                                  )
+        platform.add_source(os.path.join("gateware", "temp", "gpio_reg_pkg.sv"))
+        platform.add_source(os.path.join("gateware", "temp", "gpio_reg_top.sv"))
+        platform.add_source(os.path.join("gateware", "temp", "gpio.sv"))
+
+
 # System constants ---------------------------------------------------------------------------------
 
 boot_offset    = 0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
