@@ -26,3 +26,6 @@
 [submodule "deps/rom-locate"]
 	path = deps/rom-locate
 	url = git@github.com:betrusted-io/rom-locate.git
+[submodule "deps/opentitan"]
+	path = deps/opentitan
+	url = https://github.com/lowRISC/opentitan.git
