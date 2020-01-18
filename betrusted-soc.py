@@ -713,8 +713,9 @@ def main():
     lxsocdoc.generate_svd(soc, "build/software", name="Betrusted SoC", description="Primary UI Core for Betrusted", filename="soc.svd", vendor="Betrusted-IO")
 
     # generate the rom-inject library code
-    with open('sw/rom-inject/src/lib.rs', 'w') as libfile:
-        subprocess.call(['./key2bits.py', '-c', '-k../../keystore.bin', '-r../../rom.db'], cwd='deps/rom-locate', stdout=libfile)
+    if ~args.document_only:
+        with open('sw/rom-inject/src/lib.rs', 'w') as libfile:
+            subprocess.call(['./key2bits.py', '-c', '-k../../keystore.bin', '-r../../rom.db'], cwd='deps/rom-locate', stdout=libfile)
 
     # now re-encrypt the binary if needed
     if args.encrypt:
