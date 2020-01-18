@@ -42,6 +42,8 @@ from gateware import ticktimer
 from gateware import spinor
 from gateware import keyboard
 
+from gateware.trng import TrngRingOsc
+
 # IOs ----------------------------------------------------------------------------------------------
 
 _io = [
@@ -638,9 +640,9 @@ class BetrustedSoC(SoCCore):
         self.add_interrupt("keyboard")
 
         # GPIO module ------------------------------------------------------------------------------
-        self.submodules.gpio = BtGpio(platform.request("gpio"))
-        self.add_csr("gpio")
-        self.add_interrupt("gpio")
+        #self.submodules.gpio = BtGpio(platform.request("gpio"))
+        #self.add_csr("gpio")
+        #self.add_interrupt("gpio")
 
         # Build seed -------------------------------------------------------------------------------
         self.submodules.seed = BtSeed()
@@ -649,6 +651,18 @@ class BetrustedSoC(SoCCore):
         # ROM test ---------------------------------------------------------------------------------
         self.submodules.romtest = RomTest(platform)
         self.add_csr("romtest")
+
+        # Ring Oscillator TRNG ---------------------------------------------------------------------
+        self.submodules.trng_osc = TrngRingOsc(platform, target_freq=1e6)
+        self.add_csr("trng_osc")
+        gpio_pads = platform.request("gpio")
+        self.comb += gpio_pads[0].eq(self.trng_osc.trng_fast)
+        self.comb += gpio_pads[1].eq(self.trng_osc.trng_slow)
+        self.comb += gpio_pads[2].eq(self.trng_osc.trng_raw)
+        # ignore ring osc paths
+        self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ena]")
+        self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ring_ccw_0]")
+        self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ring_cw_1]")
 
         ## TODO: audio, wide-width/fast SPINOR, sdcard
 """
