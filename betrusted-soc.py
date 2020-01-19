@@ -582,8 +582,8 @@ class BetrustedSoC(SoCCore):
         # reset ignore
         self.platform.add_platform_command("set_false_path -through [get_nets sys_rst]")
         # relax OE driver constraint (it's OK if it is a bit late, and it's an async path from fabric to output so it will be late)
-        self.platform.add_platform_command("set_multicycle_path 2 -setup -through [get_pins sram_ext_sync_oe_n_reg/Q]")
-        self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins sram_ext_sync_oe_n_reg/Q]")
+        self.platform.add_platform_command("set_multicycle_path 2 -setup -through [get_pins betrustedsoc_sram_ext_sync_oe_n_reg/Q]")
+        self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins betrustedsoc_sram_ext_sync_oe_n_reg/Q]")
 
         # LCD interface ----------------------------------------------------------------------------
         self.submodules.memlcd = memlcd.MemLCD(platform.request("lcd"))
@@ -640,9 +640,9 @@ class BetrustedSoC(SoCCore):
         self.add_interrupt("keyboard")
 
         # GPIO module ------------------------------------------------------------------------------
-        #self.submodules.gpio = BtGpio(platform.request("gpio"))
-        #self.add_csr("gpio")
-        #self.add_interrupt("gpio")
+        self.submodules.gpio = BtGpio(platform.request("gpio"))
+        self.add_csr("gpio")
+        self.add_interrupt("gpio")
 
         # Build seed -------------------------------------------------------------------------------
         self.submodules.seed = BtSeed()
@@ -655,14 +655,15 @@ class BetrustedSoC(SoCCore):
         # Ring Oscillator TRNG ---------------------------------------------------------------------
         self.submodules.trng_osc = TrngRingOsc(platform, target_freq=1e6)
         self.add_csr("trng_osc")
-        gpio_pads = platform.request("gpio")
-        self.comb += gpio_pads[0].eq(self.trng_osc.trng_fast)
-        self.comb += gpio_pads[1].eq(self.trng_osc.trng_slow)
-        self.comb += gpio_pads[2].eq(self.trng_osc.trng_raw)
         # ignore ring osc paths
         self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ena]")
         self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ring_ccw_0]")
         self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ring_cw_1]")
+        # diagnostic option, need to turn off GPIO
+        # gpio_pads = platform.request("gpio")
+        # self.comb += gpio_pads[0].eq(self.trng_osc.trng_fast)
+        # self.comb += gpio_pads[1].eq(self.trng_osc.trng_slow)
+        # self.comb += gpio_pads[2].eq(self.trng_osc.trng_raw)
 
         ## TODO: audio, wide-width/fast SPINOR, sdcard
 """
