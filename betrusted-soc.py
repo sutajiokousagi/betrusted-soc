@@ -42,6 +42,8 @@ from gateware import ticktimer
 from gateware import spinor
 from gateware import keyboard
 
+from gateware.trng import TrngRingOsc
+
 # IOs ----------------------------------------------------------------------------------------------
 
 _io = [
@@ -599,8 +601,8 @@ class BetrustedSoC(SoCCore):
         # reset ignore
         self.platform.add_platform_command("set_false_path -through [get_nets sys_rst]")
         # relax OE driver constraint (it's OK if it is a bit late, and it's an async path from fabric to output so it will be late)
-        self.platform.add_platform_command("set_multicycle_path 2 -setup -through [get_pins sram_ext_sync_oe_n_reg/Q]")
-        self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins sram_ext_sync_oe_n_reg/Q]")
+        self.platform.add_platform_command("set_multicycle_path 2 -setup -through [get_pins betrustedsoc_sram_ext_sync_oe_n_reg/Q]")
+        self.platform.add_platform_command("set_multicycle_path 1 -hold -through [get_pins betrustedsoc_sram_ext_sync_oe_n_reg/Q]")
 
         # LCD interface ----------------------------------------------------------------------------
         self.submodules.memlcd = memlcd.MemLCD(platform.request("lcd"))
@@ -669,6 +671,19 @@ class BetrustedSoC(SoCCore):
         self.submodules.romtest = RomTest(platform)
         self.add_csr("romtest")
 
+        # Ring Oscillator TRNG ---------------------------------------------------------------------
+        self.submodules.trng_osc = TrngRingOsc(platform, target_freq=1e6)
+        self.add_csr("trng_osc")
+        # ignore ring osc paths
+        self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ena]")
+        self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ring_ccw_0]")
+        self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ring_cw_1]")
+        # diagnostic option, need to turn off GPIO
+        # gpio_pads = platform.request("gpio")
+        # self.comb += gpio_pads[0].eq(self.trng_osc.trng_fast)
+        # self.comb += gpio_pads[1].eq(self.trng_osc.trng_slow)
+        # self.comb += gpio_pads[2].eq(self.trng_osc.trng_raw)
+
         ## TODO: audio, wide-width/fast SPINOR, sdcard
 """
         # this is how to force a block in a given location
@@ -732,8 +747,9 @@ def main():
     lxsocdoc.generate_svd(soc, "build/software", name="Betrusted SoC", description="Primary UI Core for Betrusted", filename="soc.svd", vendor="Betrusted-IO")
 
     # generate the rom-inject library code
-    with open('sw/rom-inject/src/lib.rs', 'w') as libfile:
-        subprocess.call(['./key2bits.py', '-c', '-k../../keystore.bin', '-r../../rom.db'], cwd='deps/rom-locate', stdout=libfile)
+    if ~args.document_only:
+        with open('sw/rom-inject/src/lib.rs', 'w') as libfile:
+            subprocess.call(['./key2bits.py', '-c', '-k../../keystore.bin', '-r../../rom.db'], cwd='deps/rom-locate', stdout=libfile)
 
     # now re-encrypt the binary if needed
     if args.encrypt:
