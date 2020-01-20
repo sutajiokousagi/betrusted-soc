@@ -28,3 +28,6 @@ encrypted.nky
 
 # auto-gen by the betrusted-soc.py script
 rom.db
+
+# in general, we don't want this
+Cargo.lock
