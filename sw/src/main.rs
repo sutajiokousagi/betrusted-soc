@@ -35,6 +35,20 @@ const CONFIG_CLOCK_FREQUENCY: u32 = 100_000_000;
 #[used] // This is necessary to keep DBGSTR from being optimized out
 static mut DBGSTR: [u32; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
 
+macro_rules! readpac32 {
+    ($self:ident, $func:ident, $reg3:ident, $reg2:ident, $reg1:ident, $reg0:ident) => {
+        ($self.p.$func.$reg3.read().bits() << 24) | ($self.p.$func.$reg2.read().bits() << 16) | ($self.p.$func.$reg1.read().bits() << 8) | $self.p.$func.$reg0.read().bits()
+    };
+}
+macro_rules! writepac32 {
+    ($data:expr, $self:ident, $func:ident, $reg3:ident, $reg2:ident, $reg1:ident, $reg0:ident) => {
+        unsafe{ $self.p.$func.$reg3.write( |w| w.bits( ($data >> 24) & 0xFF )); }
+        unsafe{ $self.p.$func.$reg2.write( |w| w.bits( ($data >> 16) & 0xFF )); }
+        unsafe{ $self.p.$func.$reg1.write( |w| w.bits( ($data >> 8) & 0xFF )); }
+        unsafe{ $self.p.$func.$reg0.write( |w| w.bits( $data & 0xFF )); }
+    };
+}
+
 #[panic_handler]
 fn panic(_panic_info: &PanicInfo<'_>) -> ! {
     // if I include this code, the system hangs.
@@ -243,6 +257,20 @@ impl Repl {
         self.xadc.noise_only(false); // bring them back
     }
 
+    pub fn spi_perftest(&mut self) {
+        const SPI_MEM: *const [u32; 0x100_0000] = 0x20000000 as *const [u32; 0x100_0000];
+        let time: u32 = readpac32!(self, TICKTIMER, time3, time2, time1, time0);
+    
+        let mut sum: u32 = 0;
+        for i in 0..0x4_0000 {  // 256k words, or 1 megabyte
+            unsafe{ sum += (*SPI_MEM)[i]; }
+        }
+
+        let endtime: u32 = readpac32!(self, TICKTIMER, time3, time2, time1, time0);
+
+        self.text.add_text(&mut format!("time: {} sum: 0x{:08x}", endtime - time, sum));
+    }
+
     pub fn uart_tx_u8(&mut self, c: u8) {
         while self.p.UART.txfull.read().bits() != 0 {}
         unsafe { self.p.UART.rxtx.write(|w| w.bits(c as u32)); }
@@ -448,7 +476,14 @@ impl Repl {
                 delay_ms(&self.p, 200); // let the noise source stabilize
                 self.dump_noise();
                 unsafe{ self.p.POWER.power.write(|w| w.noisebias().bit(false).noise().bits(0).self_().bit(true).state().bits(3) ); }
-            } else {
+            } else if self.cmd.trim() == "spi" {
+                // spi performance test
+                self.spi_perftest();
+
+                let mut spiconfig: u32 = readpac32!(self, SPINOR, cfg3, cfg2, cfg1, cfg0);
+                spiconfig |= 1 << 22;
+                writepac32!(spiconfig, self, SPINOR, cfg3, cfg2, cfg1, cfg0);
+            }  else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
         }
