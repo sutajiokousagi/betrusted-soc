@@ -76,6 +76,9 @@ mod tests {
         efuse.fetch(&mut jm, &mut jp);
     }
 
+    /// must manually analyze CSV outputs with e.g.:
+    /// jtag-trace.py -s -f jtag_burn.csv
+    /// jtag-trace.py is in the git@github.com:betrusted-io/jtag-trace.git repo
     #[test]
     fn jtag_burn() {
         let mut jm: JtagMach = JtagMach::new();
