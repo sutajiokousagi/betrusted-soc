@@ -31,3 +31,6 @@ rom.db
 
 # in general, we don't want this
 Cargo.lock
+
+# this is an auto-generated file
+keystore.patch
