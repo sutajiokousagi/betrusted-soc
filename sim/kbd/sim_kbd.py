@@ -142,6 +142,8 @@ def generate_top():
     soc = SimpleSim(platform)
     builder = Builder(soc, output_dir="./run", csr_csv="test/csr.csv")
     builder.software_packages = [
+        ("libcompiler_rt", os.path.abspath(os.path.join(os.path.dirname(__file__), "../bios/libcompiler_rt"))),
+        ("libbase", os.path.abspath(os.path.join(os.path.dirname(__file__), "../bios/libbase"))),
         ("bios", os.path.abspath(os.path.join(os.path.dirname(__file__), "../bios")))
     ]
     vns = builder.build(run=False)

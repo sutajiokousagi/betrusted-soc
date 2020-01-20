@@ -23,14 +23,13 @@ endif
 
 bios.elf: $(BIOS_DIRECTORY)/linker.ld $(OBJECTS)
 
-%.elf: ../libbase/crt0-$(CPU)-ctr.o ../libnet/libnet.a ../libbase/libbase-nofloat.a ../libcompiler_rt/libcompiler_rt.a
+bios.elf: ../libbase/crt0-$(CPU)-ctr.o ../libbase/libbase-nofloat.a ../libcompiler_rt/libcompiler_rt.a
 	$(LD) $(LDFLAGS) -T $(BIOS_DIRECTORY)/linker.ld -N -o $@ \
 		../libbase/crt0-$(CPU)-ctr.o \
 		$(OBJECTS) \
-		-L../libnet \
 		-L../libbase \
 		-L../libcompiler_rt \
-		-lnet -lbase-nofloat -lcompiler_rt
+		-lbase-nofloat -lcompiler_rt
 ifneq ($(OS),Windows_NT)
 	chmod -x $@
 endif
