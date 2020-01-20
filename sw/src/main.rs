@@ -49,6 +49,22 @@ macro_rules! writepac32 {
     };
 }
 
+/*
+macro_rules! readpac32 {
+    ($base:expr) => {{
+        use core::mem::transmute;
+        unsafe {
+            let ptr: *mut usize = transmute($base);
+            ((ptr.sub(3).read_volatile() << 24)
+                | (ptr.sub(2).read_volatile() << 16)
+                | (ptr.sub(1).read_volatile() << 8)
+                | (ptr.sub(0).read_volatile() << 0)
+                | 0) as u32
+        }
+    }};
+}
+*/
+
 #[panic_handler]
 fn panic(_panic_info: &PanicInfo<'_>) -> ! {
     // if I include this code, the system hangs.
