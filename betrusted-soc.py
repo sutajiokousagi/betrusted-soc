@@ -474,21 +474,86 @@ class RomTest(Module, AutoDoc, AutoCSR):
 
 class Aes(Module, AutoDoc, AutoCSR):
     def __init__(self, platform):
-        print("coming soon")
+        self.key_0_q = CSRStorage(fields=[
+            CSRField("key_0", size=32, description="least significant key word")
+        ])
+        self.key_1_q = CSRStorage(fields=[
+            CSRField("key_1", size=32, description="key word 1")
+        ])
+        self.key_2_q = CSRStorage(fields=[
+            CSRField("key_2", size=32, description="key word 2")
+        ])
+        self.key_3_q = CSRStorage(fields=[
+            CSRField("key_3", size=32, description="key word 3")
+        ])
+        self.key_4_q = CSRStorage(fields=[
+            CSRField("key_4", size=32, description="key word 4")
+        ])
+        self.key_5_q = CSRStorage(fields=[
+            CSRField("key_5", size=32, description="key word 5")
+        ])
+        self.key_6_q = CSRStorage(fields=[
+            CSRField("key_6", size=32, description="key word 6")
+        ])
+        self.key_7_q = CSRStorage(fields=[
+            CSRField("key_7", size=32, description="most significant key word")
+        ])
 
-class GpioTest(Module, AutoCSR):
-    def __init__(self, platform):
-        self.data_in_d = CSRStorage(32)
-        self.direct_out_q = CSRStatus(32)
-        self.specials += Instance("gpio_reg_top",
+        self.dataout_0 = CSRStatus(fields=[
+            CSRField("data", size=32, description="data output from cipher")
+        ])
+        self.dataout_1 = CSRStatus(fields=[
+            CSRField("data", size=32, description="data output from cipher")
+        ])
+        self.dataout_2 = CSRStatus(fields=[
+            CSRField("data", size=32, description="data output from cipher")
+        ])
+        self.dataout_3 = CSRStatus(fields=[
+            CSRField("data", size=32, description="data output from cipher")
+        ])
+        self.specials += Instance("aes_reg_top",
                                   i_clk_i = ClockSignal(),
                                   i_rst_ni = ~ResetSignal(),
-                                  o_data_in_d = self.direct_out_q.status,
-                                  i_direct_out_q = self.data_in_d.storage,
+
+                                  i_key_0_q=self.key_0_q.fields.key_0,
+                                  i_key_0_qe=self.key_0_q.re,
+                                  i_key_1_q=self.key_1_q.fields.key_1,
+                                  i_key_1_qe=self.key_1_q.re,
+                                  i_key_2_q=self.key_2_q.fields.key_2,
+                                  i_key_2_qe=self.key_2_q.re,
+                                  i_key_3_q=self.key_3_q.fields.key_3,
+                                  i_key_3_qe=self.key_3_q.re,
+                                  i_key_4_q=self.key_4_q.fields.key_4,
+                                  i_key_4_qe=self.key_4_q.re,
+                                  i_key_5_q=self.key_5_q.fields.key_5,
+                                  i_key_5_qe=self.key_5_q.re,
+                                  i_key_6_q=self.key_6_q.fields.key_6,
+                                  i_key_6_qe=self.key_6_q.re,
+                                  i_key_7_q=self.key_7_q.fields.key_7,
+                                  i_key_7_qe=self.key_7_q.re,
+
+                                  o_data_out_0=self.dataout_0.fields.data,
+                                  i_data_out_0_re=self.dataout_0.we,
+                                  o_data_out_1=self.dataout_1.fields.data,
+                                  i_data_out_1_re=self.dataout_1.we,
+                                  o_data_out_2=self.dataout_2.fields.data,
+                                  i_data_out_2_re=self.dataout_2.we,
+                                  o_data_out_3=self.dataout_3.fields.data,
+                                  i_data_out_3_re=self.dataout_3.we,
                                   )
-        platform.add_source(os.path.join("gateware", "temp", "gpio_reg_pkg.sv"))
-        platform.add_source(os.path.join("gateware", "temp", "gpio_reg_top.sv"))
-        platform.add_source(os.path.join("gateware", "temp", "gpio.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_reg_pkg.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_pkg.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_control.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_key_expand.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_mix_columns.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_mix_single_column.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_sbox_canright.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_sbox_lut.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_sbox.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_shift_rows.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_sub_bytes.sv"))
+        platform.add_source(os.path.join("deps", "opentitan", "hw", "ip", "aes", "rtl", "aes_core.sv"))
+        platform.add_source(os.path.join("gateware", "aes_reg_litex.sv"))
 
 
 # System constants ---------------------------------------------------------------------------------
@@ -658,7 +723,7 @@ class BetrustedSoC(SoCCore):
         self.add_csr("keyboard")
         self.add_interrupt("keyboard")
 
-        # GPIO module ------------------------------------------------------------------------------
+        # GPIO module ------90f63ac2678aed36813c9ecb1de9a245b7ef137a------------------------------------------------------------------------
         self.submodules.gpio = BtGpio(platform.request("gpio"))
         self.add_csr("gpio")
         self.add_interrupt("gpio")
@@ -683,6 +748,10 @@ class BetrustedSoC(SoCCore):
         # self.comb += gpio_pads[0].eq(self.trng_osc.trng_fast)
         # self.comb += gpio_pads[1].eq(self.trng_osc.trng_slow)
         # self.comb += gpio_pads[2].eq(self.trng_osc.trng_raw)
+
+        # AES block --------------------------------------------------------------------------------
+        self.submodules.aes = Aes(platform)
+        self.add_csr("aes")
 
         ## TODO: audio, wide-width/fast SPINOR, sdcard
 """
