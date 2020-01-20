@@ -743,37 +743,32 @@ class BetrustedSoC(SoCCore):
         self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ena]")
         self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ring_ccw_0]")
         self.platform.add_platform_command("set_false_path -through [get_nets betrustedsoc_trng_osc_ring_cw_1]")
-        # diagnostic option, need to turn off GPIO
+        # MEMO: diagnostic option, need to turn off GPIO
         # gpio_pads = platform.request("gpio")
         # self.comb += gpio_pads[0].eq(self.trng_osc.trng_fast)
         # self.comb += gpio_pads[1].eq(self.trng_osc.trng_slow)
         # self.comb += gpio_pads[2].eq(self.trng_osc.trng_raw)
 
         # AES block --------------------------------------------------------------------------------
-        self.submodules.aes = Aes(platform)
-        self.add_csr("aes")
+        # self.submodules.aes = Aes(platform)
+        # self.add_csr("aes")
 
-        ## TODO: audio, wide-width/fast SPINOR, sdcard
-"""
-        # this is how to force a block in a given location
+        ## TODO: audio, wide-width/fast SPINOR
+
+        # Lock down both ICAPE2 blocks -------------------------------------------------------------
+        # this attempts to make it harder to partially reconfigure a bitstream that attempts to use
+        # the ICAP block. An ICAP block can read out everything inside the FPGA, including key ROM,
+        # even when the encryption fuses are set for the configuration stream.
         platform.toolchain.attr_translate["icap0"] = ("LOC", "ICAP_X0Y0")
-        platform.toolchain.attr_translate["KEEP"] = ("KEEP", "TRUE")
-        platform.toolchain.attr_translate["DONT_TOUCH"] = ("DONT_TOUCH", "TRUE")
+        platform.toolchain.attr_translate["icap1"] = ("LOC", "ICAP_X0Y1")
         self.specials += [
-            Instance("ICAPE2",
-                     i_I=0,
-                     i_RDWRB=1,
+            Instance("ICAPE2", i_I=0, i_CLK=0, i_CSIB=1, i_RDWRB=1,
                      attr={"KEEP", "DONT_TOUCH", "icap0"}
-                     )
+                     ),
+            Instance("ICAPE2", i_I=0, i_CLK=0, i_CSIB=1, i_RDWRB=1,
+                     attr={"KEEP", "DONT_TOUCH", "icap1"}
+                     ),
         ]
-
-        # turns into the following verilog:
-(* DONT_TOUCH = "TRUE", KEEP = "TRUE", LOC = "ICAP_X0Y0" *) ICAPE2 ICAPE2(
-        .I(1'd0),
-        .RDWRB(1'd1)
-);
-
-"""
 
 # Build --------------------------------------------------------------------------------------------
 
