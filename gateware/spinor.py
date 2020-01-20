@@ -11,15 +11,15 @@ class SPINOR(Module, AutoCSR):
 
         self.reset = Signal()
 
+        self.cfg0 = CSRStorage(size=8)
         self.cfg1 = CSRStorage(size=8)
         self.cfg2 = CSRStorage(size=8)
         self.cfg3 = CSRStorage(size=8)
-        self.cfg4 = CSRStorage(size=8)
 
+        self.stat0 = CSRStatus(size=8)
         self.stat1 = CSRStatus(size=8)
         self.stat2 = CSRStatus(size=8)
         self.stat3 = CSRStatus(size=8)
-        self.stat4 = CSRStatus(size=8)
 
         # # #
 
@@ -27,12 +27,12 @@ class SPINOR(Module, AutoCSR):
         cfg_we  = Signal(4)
         cfg_out = Signal(32)
         self.comb += [
-            cfg.eq(Cat(self.cfg1.storage, self.cfg2.storage, self.cfg3.storage, self.cfg4.storage)),
-            cfg_we.eq(Cat(self.cfg1.re, self.cfg2.re, self.cfg3.re, self.cfg4.re)),
-            self.stat1.status.eq(cfg_out[0:8]),
-            self.stat2.status.eq(cfg_out[8:16]),
-            self.stat3.status.eq(cfg_out[16:24]),
-            self.stat4.status.eq(cfg_out[24:32]),
+            cfg.eq(Cat(self.cfg0.storage, self.cfg1.storage, self.cfg2.storage, self.cfg3.storage)),
+            cfg_we.eq(Cat(self.cfg0.re, self.cfg1.re, self.cfg2.re, self.cfg3.re)),
+            self.stat0.status.eq(cfg_out[0:8]),
+            self.stat1.status.eq(cfg_out[8:16]),
+            self.stat2.status.eq(cfg_out[16:24]),
+            self.stat3.status.eq(cfg_out[24:32]),
         ]
 
         mosi_pad = TSTriple()
