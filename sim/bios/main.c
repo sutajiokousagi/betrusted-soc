@@ -914,6 +914,12 @@ void lcd_animate(void) {
 #endif
 }
 
+uint16_t lfsr(uint16_t in) {
+	/* taps: 16 14 13 11; feedback polynomial: x^16 + x^14 + x^13 + x^11 + 1 */
+	unsigned bit  = ((in >> 0) ^ (in >> 2) ^ (in >> 3) ^ (in >> 5) ) & 1;
+	return (in >> 1) | (bit << 15);
+};
+
 int main(int i, char **c)
 {
 	char buffer[64];
@@ -1059,7 +1065,25 @@ int main(int i, char **c)
 	  ;
 	keyboard_ev_pending_write(1);
 	
-#endif	
+#endif
+#if SPIFLASH_SIMULATION
+    volatile unsigned int dest[1024];
+    int j;
+    volatile unsigned int *rom = (volatile unsigned int *)SPIFLASH_BASE;
+
+    // do a simple read
+    uint16_t r = 0xF0AA;
+    for( j = 0; j < 32; j ++ ) {
+      dest[j] = rom[r & (1024-1)];
+      r = lfsr(r);
+    }
+
+    r = 1;
+    for( j = 0; j < 32; j++ ) {
+      r = lfsr(r);
+      dest[r & (1024-1)] = 0xBEEF0000 + j;
+    }
+#endif
 	sram_ext_read_config_write(1 << CSR_SRAM_EXT_READ_CONFIG_TRIGGER_OFFSET);
 	
 	irq_setmask(0);
