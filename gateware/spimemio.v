@@ -202,7 +202,7 @@ module spimemio (
 		.flash_io3_di (flash_io3_di)
 	);
 
-	reg [3:0] state;
+	reg [4:0] state;
 
 	always @(posedge clk) begin
 		xfer_resetn <= 1;
@@ -260,9 +260,70 @@ module spimemio (
 				3: begin
 					if (dout_valid) begin
 						xfer_resetn <= 0;
+						state <= 16;
+					end
+				end
+				16: begin  // these states enable OPI DDR mode
+					din_valid <= 1;
+					din_data <= 8'h 72;  // config register 2
+					din_tag <= 0;
+					if (din_ready) begin
+						din_valid <= 0;
+						state <= 17;
+					end
+				end
+				17: begin
+					din_valid <= 1;
+					din_data <= 8'h 0;  // adr msb
+					din_tag <= 0;
+					if (din_ready) begin
+						din_valid <= 0;
+						state <= 18;
+					end
+				end
+				18: begin
+					din_valid <= 1;
+					din_data <= 8'h 0;  // adr
+					din_tag <= 0;
+					if (din_ready) begin
+						din_valid <= 0;
+						state <= 19;
+					end
+				end
+				19: begin
+					din_valid <= 1;
+					din_data <= 8'h 0;  // adr
+					din_tag <= 0;
+					if (din_ready) begin
+						din_valid <= 0;
+						state <= 20;
+					end
+				end
+				20: begin
+					din_valid <= 1;
+					din_data <= 8'h 0;  // adr lsb
+					din_tag <= 0;
+					if (din_ready) begin
+						din_valid <= 0;
+						state <= 21;
+					end
+				end
+				21: begin
+					din_valid <= 1;
+					din_data <= 8'h 2;  // CR2 word
+					din_tag <= 0;
+					if (din_ready) begin
+						din_valid <= 0;
+						state <= 22;
+					end
+				end
+				22: begin
+					if (dout_valid) begin
+						xfer_resetn <= 0;
 						state <= 4;
 					end
 				end
+
 				4: begin
 					rd_inc <= 0;
 					din_valid <= 1;
