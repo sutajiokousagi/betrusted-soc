@@ -4,7 +4,9 @@ from migen.genlib.cdc import MultiReg
 from litex.soc.interconnect.csr import *
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
 
-"""
+class TrngRingOsc(Module, AutoCSR, AutoDoc):
+    def __init__(self, platform, target_freq=1e6, rng_shift_width=32):
+        self.intro = ModuleDoc("""
 TrngRingOsc builds a pair of ring oscillators. One is the "slow" oscillator, which circumscribes
 the die, and attempts to hit the target_freq supplied as a parameter. The other is a "fast" oscillator,
 which is typically targeted to run in the 50-100MHz range (primarily for power reasons). The idea
@@ -15,9 +17,7 @@ enough, the fix is to slow down the target_freq parameter.
 * self.trng_raw is the unsynchronized output TRNG stream
 * self.trng_out_sync is the TRNG stream, but jammed through a sysclk synchronizer
 * self.trng_slow and self.trng_fast are debug hooks for checking the ring oscillators  
-"""
-class TrngRingOsc(Module, AutoCSR, AutoDoc):
-    def __init__(self, platform, target_freq=1e6, rng_shift_width=32):
+        """)
         devstr = platform.device.split('-')
         device_root = devstr[0]
         if devstr[1] == 'up5k':
