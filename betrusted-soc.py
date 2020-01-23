@@ -151,7 +151,7 @@ _io = [
         Subsignal("cs_n", Pins("M13")),
         Subsignal("dq",   Pins("K17 K18 L14 M15 L17 L18 M14 N14")),
         Subsignal("dqs",  Pins("R14")),
-        Subsignal("ecsn", Pins("L16")),
+        Subsignal("ecs_n", Pins("L16")),
         IOStandard("LVCMOS18")
      ),
 
@@ -276,6 +276,8 @@ class CRG(Module, AutoCSR):
         self.clock_domains.cd_sys   = ClockDomain()
         self.clock_domains.cd_spi   = ClockDomain()
         self.clock_domains.cd_lpclk = ClockDomain()
+        self.clock_domains.cd_spi_delayed = ClockDomain()
+        self.clock_domains.cd_clk200 = ClockDomain()
 
         # # #
 
@@ -295,7 +297,21 @@ class CRG(Module, AutoCSR):
         mmcm.register_clkin(clk12_bufg, 12e6)
         mmcm.create_clkout(self.cd_sys, sys_clk_freq, margin=0) # there should be a precise solution by design
         mmcm.create_clkout(self.cd_spi, 20e6)
+        mmcm.create_clkout(self.cd_spi_delayed, sys_clk_freq, phase=90)  # delayed version for SPI cclk
+        mmcm.create_clkout(self.cd_clk200, 200e6) # 200MHz required for IDELAYCTL
         mmcm.expose_drp()
+
+        # Add an IDELAYCTRL primitive for the SpiOpi block
+        reset_counter = Signal(4, reset=31)  # 155ns @ 200MHz, min 59.28ns
+        ic_reset = Signal(reset=1)
+        self.sync.clk200 += \
+            If(reset_counter != 0,
+                reset_counter.eq(reset_counter - 1)
+            ).Else(
+                ic_reset.eq(0)
+            )
+        self.specials += Instance("IDELAYCTRL", i_REFCLK=self.cd_clk200.clk, i_RST=ic_reset)
+
 
 # WarmBoot -----------------------------------------------------------------------------------------
 
@@ -621,9 +637,6 @@ class BetrustedSoC(SoCCore):
             "create_clock -name sys_clk -period 10.0 [get_nets sys_clk]")
         self.platform.add_platform_command(
             "create_clock -name spi_clk -period 50.0 [get_nets spi_clk]")
-        self.platform.add_platform_command(
-            "create_generated_clock -name sys_clk -source [get_pins MMCME2_ADV/CLKIN1] -multiply_by 50 -divide_by 6 -add -master_clock clk12 [get_pins MMCME2_ADV/CLKOUT0]"
-        )
 
         # Info -------------------------------------------------------------------------------------
         # XADC analog interface---------------------------------------------------------------------
@@ -644,7 +657,7 @@ class BetrustedSoC(SoCCore):
         ]
         self.submodules.info = info.Info(platform, self.__class__.__name__, analog_pads)
         self.add_csr("info")
-        self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{info_dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
+        self.platform.add_platform_command('create_generated_clock -name dna_cnt -source [get_pins {{betrustedsoc_dna_cnt_reg[0]/Q}}] -divide_by 2 [get_pins {{DNA_PORT/CLK}}]')
 
         # External SRAM ----------------------------------------------------------------------------
         # Note that page_rd_timing=2 works, but is a slight overclock on RAM. Cache fill time goes from 436ns to 368ns for 8 words.
@@ -660,8 +673,8 @@ class BetrustedSoC(SoCCore):
         # ODDR falling edge ignore
         self.platform.add_platform_command("set_false_path -fall_from [get_clocks sys_clk] -through [get_ports {{sram_d[*] sram_adr[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
         self.platform.add_platform_command("set_false_path -fall_to [get_clocks sys_clk] -through [get_ports {{sram_d[*]}}]")
-        self.platform.add_platform_command("set_false_path -fall_from [get_clocks sys_clk] -through [get_nets sram_ext_load]")
-        self.platform.add_platform_command("set_false_path -fall_to [get_clocks sys_clk] -through [get_nets sram_ext_load]")
+        self.platform.add_platform_command("set_false_path -fall_from [get_clocks sys_clk] -through [get_nets betrustedsoc_sram_ext_load]")
+        self.platform.add_platform_command("set_false_path -fall_to [get_clocks sys_clk] -through [get_nets betrustedsoc_sram_ext_load]")
         self.platform.add_platform_command("set_false_path -rise_from [get_clocks sys_clk] -fall_to [get_clocks sys_clk]")  # sort of a big hammer but should be OK
         # reset ignore
         self.platform.add_platform_command("set_false_path -through [get_nets sys_rst]")
@@ -713,8 +726,12 @@ class BetrustedSoC(SoCCore):
         self.add_csr("power")
 
         # SPI flash controller ---------------------------------------------------------------------
-        spi_pads = platform.request("spiflash_1x")
-        self.submodules.spinor = spinor.SPINOR(platform, spi_pads, size=SPI_FLASH_SIZE)
+        legacy_spi = False
+        if legacy_spi:
+            self.submodules.spinor = spinor.SPINOR(platform, platform.request("spiflash_1x"), size=SPI_FLASH_SIZE)
+        else:
+            self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"))
+            self.comb += [ self.spinor.do.eq(self.spinor.di), self.spinor.mosi.eq(self.spinor.miso) ] # loopback for testing
         self.register_mem("spiflash", self.mem_map["spiflash"], self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
 
