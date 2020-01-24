@@ -69,7 +69,7 @@ _io = [
         # Subsignal("noisebias_on", Pins("A13"), IOStandard("LVCMOS33")),  # PATCH
         Subsignal("allow_up5k_n", Pins("U7"), IOStandard("LVCMOS18")),
         Subsignal("pwr_s0",       Pins("U6"), IOStandard("LVCMOS18")),
-        Subsignal("pwr_s1",       Pins("L13"), IOStandard("LVCMOS18")),
+        # Subsignal("pwr_s1",       Pins("L13"), IOStandard("LVCMOS18")),  # PATCH
         # Noise generator
         Subsignal("noise_on", Pins("P14 R13"), IOStandard("LVCMOS18")),
      ),
@@ -152,6 +152,7 @@ _io = [
         Subsignal("dq",   Pins("K17 K18 L14 M15 L17 L18 M14 N14")),
         Subsignal("dqs",  Pins("R14")),
         Subsignal("ecs_n", Pins("L16")),
+        Subsignal("sclk", Pins("L13")),
         IOStandard("LVCMOS18")
      ),
 
@@ -270,23 +271,30 @@ class Platform(XilinxPlatform):
 # CRG ----------------------------------------------------------------------------------------------
 
 class CRG(Module, AutoCSR):
-    def __init__(self, platform, sys_clk_freq):
+    def __init__(self, platform, sys_clk_freq, spinor_edge_delay_ns=2.5):
         self.warm_reset = Signal()
 
         self.clock_domains.cd_sys   = ClockDomain()
         self.clock_domains.cd_spi   = ClockDomain()
         self.clock_domains.cd_lpclk = ClockDomain()
-        self.clock_domains.cd_spi_delayed = ClockDomain()
+        self.clock_domains.cd_spinor = ClockDomain()
         self.clock_domains.cd_clk200 = ClockDomain()
 
         # # #
+        sysclk_ns = 1e9 / sys_clk_freq
+        # convert delay request in ns to degrees, where 360 degrees is one whole clock period
+        phase_f = (spinor_edge_delay_ns / sysclk_ns) * 360
+        # round phase to the nearest multiple of 7.5 (needs to be a multiple of 45 / CLKOUT2_DIVIDE = 45 / 6 = 7.5
+        # note that CLKOUT2_DIVIDE is automatically calculated by mmcm.create_clkout() below
+        phase = round(phase_f / 7.5) * 7.5
 
         clk32khz = platform.request("lpclk")
         self.specials += Instance("BUFG", i_I=clk32khz, o_O=self.cd_lpclk.clk)
-        platform.add_period_constraint(clk32khz, 1e9/32.768e3)
+        platform.add_platform_command("create_clock -name lpclk -period {:0.3f} [get_nets lpclk]".format(1e9/32.768e3))
 
         clk12 = platform.request("clk12")
-        platform.add_period_constraint(clk12, 1e9/12e6)
+        # this constraint must strictly proceed the create_generated_clock constraints
+        platform.add_platform_command("create_clock -name clk12 -period {:0.3f} [get_nets clk12]".format(1e9/12e6))
 
         # This allows PLLs/MMCMEs to be placed anywhere and reference the input clock
         clk12_bufg = Signal()
@@ -295,10 +303,15 @@ class CRG(Module, AutoCSR):
         self.submodules.mmcm = mmcm = S7MMCM(speedgrade=-1)
         self.comb += mmcm.reset.eq(self.warm_reset)
         mmcm.register_clkin(clk12_bufg, 12e6)
+        # we count on clocks being assigned to the MMCME2_ADV in order. If we make more MMCME2 or shift ordering, these constraints must change.
         mmcm.create_clkout(self.cd_sys, sys_clk_freq, margin=0) # there should be a precise solution by design
+        platform.add_platform_command("create_generated_clock -name sys_clk [get_pins MMCME2_ADV/CLKOUT0]")
         mmcm.create_clkout(self.cd_spi, 20e6)
-        mmcm.create_clkout(self.cd_spi_delayed, sys_clk_freq, phase=90)  # delayed version for SPI cclk
+        platform.add_platform_command("create_generated_clock -name spi_clk [get_pins MMCME2_ADV/CLKOUT1]")
+        mmcm.create_clkout(self.cd_spinor, sys_clk_freq, phase=phase)  # delayed version for SPINOR cclk (different from COM SPI above)
+        platform.add_platform_command("create_generated_clock -name spinor [get_pins MMCME2_ADV/CLKOUT2]")
         mmcm.create_clkout(self.cd_clk200, 200e6) # 200MHz required for IDELAYCTL
+        platform.add_platform_command("create_generated_clock -name clk200 [get_pins MMCME2_ADV/CLKOUT3]")
         mmcm.expose_drp()
 
         # Add an IDELAYCTRL primitive for the SpiOpi block
@@ -362,7 +375,7 @@ class BtPower(Module, AutoCSR, AutoDoc):
             pads.allow_up5k_n.eq(~self.power.fields.ec_snoop),
             # Ensure SRAM isolation during reset (CE & ZZ = 1 by pull-ups)
             pads.pwr_s0.eq(self.power.fields.state[0] & ~ResetSignal()),
-            pads.pwr_s1.eq(self.power.fields.state[1]),
+            # pads.pwr_s1.eq(self.power.fields.state[1]),         # PATCH
             # pads.noisebias_on.eq(self.power.fields.noisebias),  # PATCH
             pads.noise_on.eq(self.power.fields.noise),
         ]
@@ -629,14 +642,9 @@ class BetrustedSoC(SoCCore):
         self.register_mem("vexriscv_debug", 0xe00f0000, self.cpu.debug_bus, 0x100)
 
         # Clockgen cluster -------------------------------------------------------------------------
-        self.submodules.crg = CRG(platform, sys_clk_freq)
+        self.submodules.crg = CRG(platform, sys_clk_freq, spinor_edge_delay_ns=2.0)
         self.add_csr("crg")
-        self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/sys_clk_freq)
         self.comb += self.crg.warm_reset.eq(warm_reset)
-        self.platform.add_platform_command(
-            "create_clock -name sys_clk -period 10.0 [get_nets sys_clk]")
-        self.platform.add_platform_command(
-            "create_clock -name spi_clk -period 50.0 [get_nets spi_clk]")
 
         # Info -------------------------------------------------------------------------------------
         # XADC analog interface---------------------------------------------------------------------
@@ -665,11 +673,11 @@ class BetrustedSoC(SoCCore):
         #self.submodules.sram_ext = sram_32.SRAM32(platform.request("sram"), rd_timing=7, wr_timing=6, page_rd_timing=5)  # this worked with 3:nbits page length in C firmware
         self.add_csr("sram_ext")
         self.register_mem("sram_ext", self.mem_map["sram_ext"], self.sram_ext.bus, size=0x1000000)
-        # Constraint so a total of one extra clock period is consumed in routing delays (split 5/5 evenly on in and out)
-        self.platform.add_platform_command("set_input_delay -clock [get_clocks sys_clk] -min -add_delay 5.0 [get_ports {{sram_d[*]}}]")
-        self.platform.add_platform_command("set_input_delay -clock [get_clocks sys_clk] -max -add_delay 5.0 [get_ports {{sram_d[*]}}]")
+        # A bit of a bodge -- the path is actually async, so what we are doing is trying to constrain intra-channel skew by pushing them up against clock limits
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks sys_clk] -min -add_delay 4.0 [get_ports {{sram_d[*]}}]")
+        self.platform.add_platform_command("set_input_delay -clock [get_clocks sys_clk] -max -add_delay 9.0 [get_ports {{sram_d[*]}}]")
         self.platform.add_platform_command("set_output_delay -clock [get_clocks sys_clk] -min -add_delay 0.0 [get_ports {{sram_adr[*] sram_d[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
-        self.platform.add_platform_command("set_output_delay -clock [get_clocks sys_clk] -max -add_delay 4.5 [get_ports {{sram_adr[*] sram_d[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
+        self.platform.add_platform_command("set_output_delay -clock [get_clocks sys_clk] -max -add_delay 3.0 [get_ports {{sram_adr[*] sram_d[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
         # ODDR falling edge ignore
         self.platform.add_platform_command("set_false_path -fall_from [get_clocks sys_clk] -through [get_ports {{sram_d[*] sram_adr[*] sram_ce_n sram_oe_n sram_we_n sram_zz_n sram_dm_n[*]}}]")
         self.platform.add_platform_command("set_false_path -fall_to [get_clocks sys_clk] -through [get_ports {{sram_d[*]}}]")
@@ -730,8 +738,45 @@ class BetrustedSoC(SoCCore):
         if legacy_spi:
             self.submodules.spinor = spinor.SPINOR(platform, platform.request("spiflash_1x"), size=SPI_FLASH_SIZE)
         else:
-            self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"))
-            self.comb += [ self.spinor.do.eq(self.spinor.di), self.spinor.mosi.eq(self.spinor.miso) ] # loopback for testing
+            sclk_instance_name="SCLK_ODDR"
+            iddr_instance_name="SPI_IDDR"
+            self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"), sclk_instance=sclk_instance_name, iddr_instance=iddr_instance_name)
+            self.sync += [ self.spinor.do.eq(self.spinor.di), self.spinor.mosi.eq(self.spinor.miso) ] # loopback for testing only
+            # reminder to self: the {{ and }} overloading is because Python treats these as special in strings, so {{ -> { in actual constraint
+            # NOTE: ECSn is deliberately not constrained -- it's more or less async (0-10ns delay on the signal, only meant to line up with "block" region
+
+            # constrain DQS-to-DQ input DDR delays
+            self.platform.add_platform_command("create_clock -name spidqs -period 10 [get_ports spiflash_8x_dqs]")
+            self.platform.add_platform_command("set_input_delay -clock spidqs -max 0.6 [get_ports {{spiflash_8x_dq[*]}}]")
+            self.platform.add_platform_command("set_input_delay -clock spidqs -min -0.6 [get_ports {{spiflash_8x_dq[*]}}]")
+            self.platform.add_platform_command("set_input_delay -clock spidqs -max 0.6 [get_ports {{spiflash_8x_dq[*]}}] -clock_fall -add_delay")
+            self.platform.add_platform_command("set_input_delay -clock spidqs -min -0.6 [get_ports {{spiflash_8x_dq[*]}}] -clock_fall -add_delay")
+
+            # derive clock for SCLK - clock-forwarded from DDR see Xilinx answer 62488 use case #4
+            self.platform.add_platform_command("create_generated_clock -name spiclk_out -multiply_by 1 -source [get_pins {}/Q] [get_ports spiflash_8x_sclk]".format(sclk_instance_name))
+            # if using CCLK output and not DDR forwarded clock, these are the commands used to define the clock
+            #self.platform.add_platform_command("create_generated_clock -name spiclk_out -source [get_pins STARTUPE2/USRCCLKO] -combinational [get_pins STARTUPE2/USRCCLKO]")
+            #self.platform.add_platform_command("set_clock_latency -min 0.5 [get_clocks spiclk_out]")  # define the min/max delay of the STARTUPE2 buffer
+            #self.platform.add_platform_command("set_clock_latency -max 7.5 [get_clocks spiclk_out]")
+
+            # constrain MISO SDR delay -- WARNING: -max is 'actually' 5.0ns, but design can't meet timing @ 5.0 tPD from SPIROM. There is some margin in the timing closure tho, so 4.5ns is probably going to work....
+            self.platform.add_platform_command("set_input_delay -clock [get_clocks spiclk_out] -clock_fall -max 4.5 [get_ports spiflash_8x_dq[1]]")
+            self.platform.add_platform_command("set_input_delay -clock [get_clocks spiclk_out] -clock_fall -min 1 [get_ports spiflash_8x_dq[1]]")
+            # corresponding false path on MISO DDR input when clocking SDR data
+            self.platform.add_platform_command("set_false_path -from [get_clocks spiclk_out] -to [get_pin {}/D ]".format(iddr_instance_name + "1"))
+
+            # constrain CLK-to-DQ output DDR delays; MOSI uses the same rules
+            self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -max 1 [get_ports {{spiflash_8x_dq[*]}}]")
+            self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -min -1 [get_ports {{spiflash_8x_dq[*]}}]")
+            self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -max 1 [get_ports {{spiflash_8x_dq[*]}}] -clock_fall -add_delay")
+            self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -min -1 [get_ports {{spiflash_8x_dq[*]}}] -clock_fall -add_delay")
+            # constrain CLK-to-CS output delay. NOTE: timings require one dummy cycle insertion between CS and SCLK (de)activations. Not possible to meet timing for DQ & single-cycle CS due to longer tS/tH reqs for CS
+            self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -min -1 [get_ports spiflash_8x_cs_n]") # -3 in reality
+            self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -max 1 [get_ports spiflash_8x_cs_n]")  # 4.5 in reality
+            # unconstrain OE path - we have like 10+ dummy cycles to turn the bus on wr->rd, and 2+ cycles to turn on end of read
+            self.platform.add_platform_command("set_false_path -through [ get_pins betrustedsoc_spinor_dq_mosi_oe_reg/Q ]")
+            self.platform.add_platform_command("set_false_path -through [ get_pins betrustedsoc_spinor_dq_oe_reg/Q ]")
+
         self.register_mem("spiflash", self.mem_map["spiflash"], self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
 

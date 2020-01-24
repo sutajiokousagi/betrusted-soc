@@ -2,9 +2,10 @@ from litex.build.xilinx.vivado import XilinxVivadoToolchain
 from litex.soc.interconnect.csr_eventmanager import *
 from litex.soc.interconnect import wishbone
 from litex.soc.integration.doc import AutoDoc, ModuleDoc
+from migen.genlib.cdc import MultiReg
 
 class SpiOpi(Module, AutoCSR, AutoDoc):
-    def __init__(self, pads):
+    def __init__(self, pads, dqs_delay_taps=0, dq_delay_taps=31, sclk_instance="SCLK_ODDR", iddr_instance="SPI_IDDR"):
         self.intro = ModuleDoc("""
         SpiOpi implements a dual-mode SPI or OPI interface. OPI is an octal (8-bit) wide
         variant of SPI, which is unique to Macronix parts. It is concurrently interoperable
@@ -26,7 +27,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         cycles. Note that because the cycles are DDR, this means one 16-bit wide request must be
         issued every cycle to keep up with the interface. 
         
-        For the output of data to ROM, expects a clock called "spi_delayed" which is a delayed 
+        For the output of data to ROM, expects a clock called "spinor_delayed" which is a delayed 
         version of "sys". The delay is necessary to get the correct phase relationship between 
         the SIO and SCLK in DTR/DDR mode, and it also has to compensate for the special-case
         difference in the CCLK pad vs other I/O.
@@ -40,11 +41,22 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         self.bus = wishbone.Interface()
 
         cs_n = Signal()
+        self.sync += [cs_n.eq(self.bus.stb)] # dummy statement for timing closure
+
+        # treat ECS_N as an async signal -- just a "rough guide" of problems
         ecs_n = Signal()
+        self.specials += MultiReg(pads.ecs_n, ecs_n)
 
         self.mode = CSRStorage(fields=[
-            CSRField("opi_mode", size=1, description="Set to `1` to enable OPI mode")
+            CSRField("opi_mode", size=1, description="Set to `1` to enable OPI mode"),
+            CSRField("clkgate_test", size=1, description="Gate clock - for testing only. Set to `0` to turn off clock.", reset=1),
         ])
+
+        self.status = CSRStatus(fields=[
+            CSRField("ecc_error", size=1, description="Live status of the ECS_N bit (ECC error on current packet when low)")
+        ])
+        self.comb += self.status.fields.ecc_error.eq(ecs_n)
+        # TODO: record current address when ECS_N triggers, wire up an interrupt to ECS_N, record if ECS_N overflow happens
 
         delay_type="FIXED" # FIXED for timing closure; change to "VAR_LOAD" for production
 
@@ -61,18 +73,19 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
             CSRField("q", size=5, description="Readback of current delay amount, useful if inc/ce is used to set"),
         ])
         self.specials += [
-            Instance("IDELAYE2",
-                     p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="CLOCK",
-                     p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200,
-                     p_PIPE_SEL="FALSE", p_IDELAY_VALUE=31, p_IDELAY_TYPE=delay_type,
-
-                     i_C=ClockSignal(),
-                     i_LD=self.dqs_delay_config.fields.load, i_CE=self.dqs_delay_config.fields.ce,
-                     i_LDPIPEEN=0, i_INC=self.dqs_delay_config.fields.inc,
-                     i_CNTVALUEIN=self.dqs_delay_config.fields.d, o_CNTVALUEOUT=self.dqs_delay_status.fields.q,
-                     i_IDATAIN=pads.dqs, o_DATAOUT=dqs_delayed,
-            ),
-            Instance("BUFIO", i_I=dqs_delayed, o_O=dqs_iobuf),
+            # Instance("IDELAYE2",
+            #          p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="CLOCK",
+            #          p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200,
+            #          p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dqs_delay_taps, p_IDELAY_TYPE=delay_type,
+            #
+            #          i_C=ClockSignal(),
+            #          i_LD=self.dqs_delay_config.fields.load, i_CE=self.dqs_delay_config.fields.ce,
+            #          i_LDPIPEEN=0, i_INC=self.dqs_delay_config.fields.inc,
+            #          i_CNTVALUEIN=self.dqs_delay_config.fields.d, o_CNTVALUEOUT=self.dqs_delay_status.fields.q,
+            #          i_IDATAIN=pads.dqs, o_DATAOUT=dqs_delayed,
+            # ),
+            # Instance("BUFIO", i_I=dqs_delayed, o_O=dqs_iobuf),
+            Instance("BUFR", i_I=pads.dqs, o_O=dqs_iobuf),
         ]
 
         # DQ connections -------------------------------------------------------------------------
@@ -120,7 +133,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                 self.specials += Instance("IDELAYE2",
                          p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
                          p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200,
-                         p_PIPE_SEL="FALSE", p_IDELAY_VALUE=0, p_IDELAY_TYPE=delay_type,
+                         p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
                          i_C=ClockSignal(),
                          i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
@@ -133,7 +146,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                           p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
                           p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE",
                           p_REFCLK_FREQUENCY=200,
-                          p_PIPE_SEL="FALSE", p_IDELAY_VALUE=0, p_IDELAY_TYPE=delay_type,
+                          p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
                           i_C=ClockSignal(),
                           i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
@@ -141,7 +154,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                           i_CNTVALUEIN=self.delay_config.fields.d,
                           i_IDATAIN=dq.i[i-1], o_DATAOUT=dq_delayed[i],
               ),
-            self.specials += Instance("IDDR",
+            self.specials += Instance("IDDR", name="SPI_IDDR{}".format(str(i)),
                 p_DDR_CLK_EDGE="SAME_EDGE_PIPELINED", # higher latency, but easier timing closure
                 i_C=dqs_iobuf, i_R=ResetSignal(), i_S=0, i_CE=1,
                 i_D=dq_delayed[i], o_Q1=di_rise[i], o_Q2=di_fall[i],
@@ -160,7 +173,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
             Instance("IDELAYE2",
                      p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
                      p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200,
-                     p_PIPE_SEL="FALSE", p_IDELAY_VALUE=0, p_IDELAY_TYPE=delay_type,
+                     p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
                      i_C=ClockSignal(),
                      i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
@@ -173,21 +186,38 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
               i_C=dqs_iobuf, i_R=ResetSignal(), i_S=0, i_CE=1,
               i_D=dq_delayed[0], o_Q1=di_rise[0], o_Q2=di_fall[0],
             ),
+        ]
+
+        # wire up SCLK interface
+        clkgate = Signal()
+        self.sync += clkgate.eq(self.mode.fields.clkgate_test)
+        self.specials += [
+            # de-activate the CCLK interface, parallel it with a GPIO
             Instance("STARTUPE2",
-                     i_CLK=0,
-                     i_GSR=0,
-                     i_GTS=0,
-                     i_KEYCLEARB=0,
-                     i_PACK=0,
-                     i_USRCCLKO=ClockSignal("spi_delayed"),
-                     i_USRCCLKTS=0,
-                     i_USRDONEO=1,
-                     i_USRDONETS=1
+                     i_CLK=0, i_GSR=0, i_GTS=0, i_KEYCLEARB=0, i_PACK=0, i_USRDONEO=1, i_USRDONETS=1,
+                     i_USRCCLKO=0, i_USRCCLKTS=1,  # force to tristate
+                     ),
+            Instance("ODDR", name=sclk_instance, # need to name this so we can constrain it properly
+                     p_DDR_CLK_EDGE="SAME_EDGE",
+                     i_C=ClockSignal("spinor"), i_R=ResetSignal("spinor"), i_S=0, i_CE=clkgate,
+                     i_D1=1, i_D2=0, o_Q=pads.sclk,
+                     )
+        ]
+
+        # wire up CS_N
+        self.specials += [
+            Instance("ODDR",
+              p_DDR_CLK_EDGE="SAME_EDGE",
+              i_C=ClockSignal(), i_R=ResetSignal(), i_S=0, i_CE=1,
+              i_D1=cs_n, i_D2=cs_n, o_Q=pads.cs_n,
             ),
         ]
+
         # wire up SPI and decode tristate signals
+        self.specials += [
+            Instance("FDRE", i_C=~ClockSignal("spinor"), i_D=dq.i[0], i_CE=1, i_R=0, o_Q=self.miso)
+        ]
         self.sync += [
-            self.miso.eq(dq.i[1]),
             dq.oe.eq(~self.spi_mode & self.tx),
             dq_mosi.oe.eq(self.spi_mode | self.tx),
         ]
