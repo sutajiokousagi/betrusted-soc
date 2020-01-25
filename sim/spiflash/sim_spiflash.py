@@ -32,7 +32,7 @@ sim_config = {
 #    "sys_clk_freq": 12e6,  # UP5K-side
 #    "spi_clk_freq": 24e6,
     "sys_clk_freq": 100e6,  # Artix-side
-    "spi_clk_freq": 25e6,
+    "spinor_clk_freq": 100e6,
 }
 
 
@@ -64,7 +64,8 @@ _io = [
      Subsignal("cs_n", Pins("M13")),
      Subsignal("dq", Pins("K17 K18 L14 M15 L17 L18 M14 N14")),
      Subsignal("dqs", Pins("R14")),
-     Subsignal("ecsn", Pins("L16")),
+     Subsignal("ecs_n", Pins("L16")),
+     Subsignal("sclk", Pins("L13")),
      IOStandard("LVCMOS18")
      ),
 
@@ -97,13 +98,13 @@ class CRG(Module):
     def __init__(self, platform, core_config):
         # build a simulated PLL. You can add more pll.create_clkout() lines to add more clock frequencies as necessary
         self.clock_domains.cd_sys = ClockDomain()
-        self.clock_domains.cd_spi = ClockDomain()
+        self.clock_domains.cd_spinor = ClockDomain()
 
         self.submodules.pll = pll = S7MMCM()
         self.comb += pll.reset.eq(platform.request("rst"))
         pll.register_clkin(platform.request("clk12"), sim_config["input_clk_freq"])
         pll.create_clkout(self.cd_sys, sim_config["sys_clk_freq"])
-        pll.create_clkout(self.cd_spi, sim_config["spi_clk_freq"])
+        pll.create_clkout(self.cd_spinor, sim_config["spinor_clk_freq"], phase=60) # hard coded phase, check application code for value
 
 class SimpleSim(SoCCore):
     mem_map = {
@@ -137,13 +138,14 @@ class SimpleSim(SoCCore):
                   self.sram_ext.bus, size=0x1000000)
 
         # spi control -- that's the point of this simulation!
-        SPI_FLASH_SIZE = 16 * 1024 * 1024
-        spi_pads = platform.request("spiflash_1x")
+        SPI_FLASH_SIZE=128 * 1024 * 1024
+        sclk_instance_name = "SCLK_ODDR"
+        iddr_instance_name = "SPI_IDDR"
+        self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"), sclk_instance=sclk_instance_name,
+                                               iddr_instance=iddr_instance_name)
         platform.add_source("../../gateware/spimemio.v") ### NOTE: this actually doesn't help for SIM, but it reminds us to scroll to the bottom of this file and add it to the xvlog imports
-        self.submodules.spinor = spinor.SPINOR(platform, spi_pads, size=SPI_FLASH_SIZE)
         self.register_mem("spiflash", self.mem_map["spiflash"], self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
-
 
 
 def generate_top():
@@ -171,18 +173,37 @@ reg clk12;
 initial clk12 = 1'b1;
 always #41.16666 clk12 = ~clk12;
 
-wire miso, wp, hold;
-assign (weak1, weak0) miso = 1'b0;
-assign (weak1, weak0) hold = 1'b1;
-assign (weak1, weak0) wp = 1'b1;
+wire sclk;
+wire [7:0] sio;
+wire dqs;
+wire ecsb;
+wire csn;
+reg reset;
+
+initial begin
+  reset = 1'b1;
+  #1000;
+  reset = 1'b0;
+end   
+
+MX66UM1G45G rom(
+  .SCLK(sclk),
+  .CS(csn),
+  .SIO(sio),
+  .DQS(dqs),
+  .ECSB(ecsb),
+  .RESET(~reset)
+);
 
 top dut (
-    .spiflash_1x_miso(miso),  // make it so something shows up instead of 'Z' or 'X'
-    .spiflash_1x_wp(wp),
-    .spiflash_1x_hold(hold),
+    .spiflash_8x_cs_n(csn),
+    .spiflash_8x_dq(sio),
+    .spiflash_8x_dqs(dqs),
+    .spiflash_8x_ecs_n(ecsb),
+    .spiflash_8x_sclk(sclk),
 
     .clk12(clk12),
-    .rst(1'b0)
+    .rst(reset)
 );
 
 endmodule""")
@@ -202,8 +223,9 @@ def run_sim(gui=False):
     os.system(call_cmd + "cd run && xvlog ../../glbl.v")
     os.system(call_cmd + "cd run && xvlog top.v -sv")
     os.system(call_cmd + "cd run && xvlog top_tb.v -sv ")
-    os.system(call_cmd + "cd run && xvlog /home/bunnie/code/betrusted-soc/deps/litex/litex/soc/cores/cpu/vexriscv/verilog/VexRiscv.v")
-    os.system(call_cmd + "cd run && xvlog /home/bunnie/code/betrusted-soc/gateware/spimemio.v")
+    os.system(call_cmd + "cd run && xvlog ../../..//deps/litex/litex/soc/cores/cpu/vexriscv/verilog/VexRiscv.v")
+    os.system(call_cmd + "cd run && xvlog ../../../betrusted-soc/gateware/spimemio.v")
+    os.system(call_cmd + "cd run && xvlog ../MX66UM1G45G/MX66UM1G45G.v")
     os.system(call_cmd + "cd run && xelab -debug typical top_tb glbl -s top_tb_sim -L unisims_ver -L unimacro_ver -L SIMPRIM_VER -L secureip -L $xsimdir/xil_defaultlib -timescale 1ns/1ps")
     if gui:
         os.system(call_cmd + "cd run && xsim top_tb_sim -gui")
