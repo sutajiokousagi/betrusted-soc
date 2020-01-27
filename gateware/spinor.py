@@ -140,12 +140,13 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         # bit 0 (MOSI) is special-cased to handle SPI mode
         dq_mosi = TSTriple(1) # this has similar structure but an independent "oe" signal
         self.specials += dq_mosi.get_tristate(pads.dq[0])
-        do_mux = Signal() # mux signal for mosi/dq select of bit 0
+        do_mux_rise = Signal() # mux signal for mosi/dq select of bit 0
+        do_mux_fall = Signal()
         self.specials += [
             Instance("ODDR",
               p_DDR_CLK_EDGE="SAME_EDGE",
               i_C=ClockSignal(), i_R=ResetSignal(), i_S=0, i_CE=1,
-              i_D1=do_mux, i_D2=do_fall[0], o_Q=dq_mosi.o,
+              i_D1=do_mux_rise, i_D2=do_mux_fall, o_Q=dq_mosi.o,
             ),
             Instance("IDELAYE2",
                      p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
@@ -214,26 +215,28 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         Thus holding "req" high can allow the PHY to back-to-back issue cycles without pause.
         
         """)
+
         # PHY machine mux --------------------------------------------------------------------------
         # clk_en mux
         self.spi_mode = Signal() # when asserted, force into SPI mode only
         spi_clk_en = Signal()
         opi_clk_en = Signal()
-        self.comb += clk_en.eq(~self.spi_mode & opi_clk_en | self.spi_mode & spi_clk_en)
+        self.sync += clk_en.eq(~self.spi_mode & opi_clk_en | self.spi_mode & spi_clk_en)
         # tristate mux
         self.sync += [
             dq.oe.eq(~self.spi_mode & self.tx),
             dq_mosi.oe.eq(self.spi_mode | self.tx),
         ]
         # data out mux (no data in mux, as we can just sample data in all the time without harm)
-        self.comb += do_mux.eq(~self.spi_mode & do_rise[0] | self.spi_mode & self.mosi)
+        self.comb += do_mux_rise.eq(~self.spi_mode & do_rise[0] | self.spi_mode & self.mosi)
+        self.comb += do_mux_fall.eq(~self.spi_mode & do_fall[0] | self.spi_mode & self.mosi)
 
         has_dummy = Signal() # indicates if the current "req" requires dummy cycles to be appended (used for both OPI/SPI)
-        rom_addr = Signal(32)  # location of the internal ROM address pointer
+        rom_addr = Signal(32, reset=0xFFFFFFFC)  # location of the internal ROM address pointer; reset to invalid address to force an address request on first read
 
         spi_req = Signal()
         spi_ack = Signal()
-        spi_do = Signal(8)
+        spi_do = Signal(8) # this is the API to the machine
         spi_di = Signal(8)
 
         opi_req_tx = Signal()
@@ -253,10 +256,19 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         # self.comb += self.spi_mode.eq(~self.config.fields.opi_mode) ## THIS SELECTION NOW HAPPENS AT MAC LEVEL
 
         spicount = Signal(5)
-        spi_so = Signal(8)
+        spi_so = Signal(8) # this internal to the machine
         spi_si = Signal(8)
         spi_dummy = Signal()
+        spi_di_load = Signal() # spi_do load is pipelined back one cycle using this mechanism
+        spi_di_load2 = Signal()
+        spi_ack_pipe = Signal()
+        self.sync += [ # pipelining is required the MISO path is very slow (IOB->fabric FD), and a falling-edge retiming reg is used to meet timing
+            spi_di_load2.eq(spi_di_load),
+            If(spi_di_load2, spi_di.eq(Cat(self.miso, spi_si[:-1]))).Else(spi_di.eq(spi_di)),
+            spi_ack.eq(spi_ack_pipe),
+        ]
         self.comb += self.mosi.eq(spi_so[7])
+        self.sync += spi_si.eq(Cat(self.miso, spi_si[:-1]))
         self.submodules.spiphy = spiphy = FSM(reset_state="RESET")
         spiphy.act("RESET",
                    If(spi_req,
@@ -265,14 +277,11 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                       NextValue(spi_clk_en, 1),
                       NextValue(spi_so, spi_do),
                       NextValue(spi_dummy, has_dummy),
-                      NextValue(spi_si, 0),
                    ).Else(
                        NextValue(spi_clk_en, 0),
-                       NextValue(spi_ack, 0),
-                       NextValue(spi_do, 0),
+                       NextValue(spi_ack_pipe, 0),
                        NextValue(spicount, 0),
                        NextValue(spi_dummy, 0),
-                       NextValue(spi_si, 0),
                    )
         )
         spiphy.act("REQ",
@@ -280,26 +289,25 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                       NextValue(spicount, spicount-1),
                       NextValue(spi_clk_en, 1),
                       NextValue(spi_so, Cat(0, spi_so[:-1])),
-                      NextValue(spi_ack, 0),
-                      NextValue(spi_si, Cat(self.miso, spi_di[:-1])),
-                   ).Elif(spicount == 0 & spi_req & ~spi_dummy, # back-to-back transaction
+                      NextValue(spi_ack_pipe, 0),
+                   ).Elif( (spicount == 0) & spi_req & ~spi_dummy, # back-to-back transaction
                           NextValue(spi_clk_en, 1),
-                          NextValue(spicount, 8),
+                          NextValue(spicount, 7),
                           NextValue(spi_clk_en, 1),
                           NextValue(spi_so, spi_do), # reload the so register
-                          NextValue(spi_di, Cat(self.miso, spi_di[:-1])), # store directly to di
-                          NextValue(spi_ack, 1),
+                          spi_di_load.eq(1), # "naked" .eq() create single-cycle pulses that default back to 0
+                          NextValue(spi_ack_pipe, 1),
                           NextValue(spi_dummy, has_dummy),
-                   ).Elif(spicount == 0 & ~spi_req & ~spi_dummy, # go back to idle
-                          NextValue(spi_di, Cat(self.miso, spi_di[:-1])), # store directly to di
-                          NextValue(spi_ack, 1),
+                   ).Elif( (spicount == 0) & ~spi_req & ~spi_dummy, # go back to idle
+                          spi_di_load.eq(1),
+                          NextValue(spi_ack_pipe, 1),
                           NextValue(spi_clk_en, 0),
                           NextState("RESET"),
-                   ).Elif(spicount == 0 & spi_dummy,
-                          NextValue(spi_di, Cat(self.miso, spi_di[:-1])),  # store directly to di
+                   ).Elif( (spicount == 0) & spi_dummy,
+                          spi_di_load.eq(1),
                           NextValue(spicount, self.config.fields.dummy),
                           NextValue(spi_clk_en, 1),
-                          NextValue(spi_ack, 0),
+                          NextValue(spi_ack_pipe, 0),
                           NextValue(spi_so, 0),  # do a dummy with '0' as the output
                           NextState("DUMMY"),
                    ) # this actually should be a fully defined situation, no "Else" applicable
@@ -310,13 +318,13 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                       NextValue(spi_clk_en, 1),
                    ).Elif(spicount <= 1 & spi_req,
                           NextValue(spi_clk_en, 1),
-                          NextValue(spicount, 8),
+                          NextValue(spicount, 7),
                           NextValue(spi_so, spi_do),  # reload the so register
-                          NextValue(spi_ack, 1), # finally ack the cycle
+                          NextValue(spi_ack_pipe, 1), # finally ack the cycle
                           NextValue(spi_dummy, has_dummy),
                    ).Else(
                        NextValue(spi_clk_en, 0),
-                       NextValue(spi_ack, 1),  # finally ack the cycle
+                       NextValue(spi_ack_pipe, 1),  # finally ack the cycle
                        NextState("RESET")
                    )
         )
@@ -370,6 +378,208 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                    ) # if there is an opi_req_tx at this point...we ignore it here, and handle it in idle
         )
 
+        # MAC machine -------------------------------------------------------------------------------
+        self.bus = wishbone.Interface()
+
+        self.command = CSRStorage(description="Write individual bits to issue special commands to SPI; setting multiple bits at once leads to undefined behavior.",
+        write_from_dev=True,
+        fields=[
+            CSRField("rdid", size=1, description="Issue a RDID command & update id register"),
+            CSRField("wrcr2_00", size=1, description="Write config register 2 address with cr2_00"),
+            CSRField("wakeup", size=1, description="Sequence through init & wakeup routine"),
+        ])
+        self.id = CSRStatus(description="ID code of FLASH, need to issue rdid command first", fields=[
+            CSRField("id", size=24, description="ID code of the device")
+        ])
+        self.cr2_00 = CSRStorage(description="Data to write to CR2", fields=[
+            CSRField("sopi", size=1, description="STR OPI enable (do not use with this PHY)"),
+            CSRField("dopi", size=1, description="DTR OPI enable"),
+        ])
+        # TODO: implement ECC detailed register readback, CRC checking
+
+        addr_updated = Signal()
+        d_to_wb = Signal(32) # data going back to wishbone
+        mac_count = Signal(5)
+        new_cycle = Signal(1)
+        self.sync += [ # used below to detect if we're just entering a burst, or continuing a previous burst
+            If((self.bus.cyc == 1) & (self.bus.stb == 1), new_cycle.eq(0)).Else(new_cycle.eq(1))
+        ]
+        self.submodules.mac = mac = FSM(reset_state="RESET")
+        mac.act("RESET",
+                NextValue(self.spi_mode, 1),
+                NextValue(addr_updated, 0),
+                NextValue(d_to_wb, 0),
+                NextValue(cs_n, 1),
+                NextValue(has_dummy, 0),
+                NextValue(spi_do, 0),
+                NextValue(spi_req, 0),
+                NextValue(opi_do, 0),
+                NextValue(opi_req_tx, 0),
+                NextValue(opi_req_rx, 0),
+                NextValue(mac_count, 0),
+                NextValue(self.bus.ack, 0),
+                NextValue(new_cycle, 1),
+                NextState("WAKEUP_PRE"),
+        )
+        mac.act("IDLE",
+                NextValue(self.bus.ack, 0),
+                If((self.bus.cyc == 1) & (self.bus.stb == 1) & (self.bus.we == 0) & (self.bus.cti != 7), # read cycle requested, not end-of-burst
+                   If( (rom_addr[2:] != self.bus.adr) & new_cycle,
+                      NextValue(rom_addr, Cat(Signal(2, reset=0), self.bus.adr)),
+                      NextValue(addr_updated, 1),
+                      NextValue(cs_n, 1), # raise CS in anticipation of a new address cycle
+                      NextState("SPI_READ_32_A0"),
+                   ).Elif( (rom_addr[2:] == self.bus.adr) | (~new_cycle & self.bus.cti == 2),
+                           NextValue(mac_count, 3),  # get another beat of 4 bytes at the next address
+                           NextState("SPI_READ_32")
+                   ).Else(
+                       NextValue(addr_updated, 0),
+                       NextValue(cs_n, 0),
+                   ),
+
+                   If(self.config.fields.opi_mode,
+                      NextState("OPI_8DTRD_32")
+                   ).Else(
+                       # assume: cs_n is low, and address is in the right place
+                       NextState("SPI_READ_32"),
+                       NextValue(mac_count, 3), # prep the MAC state counter to count out 4 bytes
+                   )
+                ).Elif(self.command.fields.wakeup,
+                       NextValue(cs_n, 1),
+                       NextValue(self.command.storage, 0),  # clear all pending commands
+                       NextState("WAKEUP_PRE"),
+                ).Elif(self.command.fields.wrcr2_00,
+                       NextValue(cs_n, 1),
+                       NextValue(self.command.storage, 0),
+                       NextState("WRCR2_00")
+                )
+        )
+        mac.act("OPI_8DTRD_32",
+                # gutter for now
+        )
+        mac.act("WRCR2_00",
+                # gutter for now
+        )
+        mac.act("WAKEUP_PRE",
+                NextValue(cs_n, 1), # why isn't this sticking? i shouldn't have to put this here
+                NextValue(mac_count, 4),
+                NextState("WAKEUP_PRE_CS_WAIT")
+        )
+        mac.act("WAKEUP_PRE_CS_WAIT",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextState("WAKEUP_2"),
+                   NextValue(cs_n, 0),
+                )
+        )
+        mac.act("WAKEUP_2",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextValue(spi_do, 0xab),  # wakeup from deep sleep
+                   NextValue(spi_req, 1),
+                   NextState("WAKEUP_3"),
+                )
+        )
+        mac.act("WAKEUP_3",
+                NextValue(spi_req, 0),
+                If(spi_ack,
+                   NextValue(cs_n, 1),  # raise CS
+                   NextValue(mac_count, 4),  # for >4 cycles per specsheet
+                   NextState("WAKEUP_4")
+                   )
+        )
+        mac.act("WAKEUP_4",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextState("IDLE"),
+                )
+        )
+        mac.act("SPI_READ_32",
+                If(addr_updated,
+                   NextState("SPI_READ_32_CS"),
+                   NextValue(has_dummy, 0),
+                   NextValue(mac_count, 3),
+                   NextValue(cs_n, 1),
+                   NextValue(spi_req, 0),
+                ).Else(
+                    If(mac_count > 0,
+                       NextValue(has_dummy, 0),
+                       NextValue(spi_req, 1),
+                       NextState("SPI_READ_32_D")
+                    ).Else(
+                        NextValue(spi_req, 0),
+                        If(spi_ack,
+                           NextValue(self.bus.dat_r, Cat(d_to_wb[8:],spi_di)),
+                           NextValue(self.bus.ack, 1),
+                           NextValue(rom_addr, rom_addr + 1),
+                           NextState("IDLE")
+                        )
+                    )
+                )
+        )
+        mac.act("SPI_READ_32_D",
+                If(spi_ack,
+                   # shift in one byte at a time to d_to_wb(32)
+                   NextValue(d_to_wb, Cat(d_to_wb[8:],spi_di,)),
+                   NextValue(mac_count, mac_count - 1),
+                   NextState("SPI_READ_32"),
+                   NextValue(rom_addr, rom_addr + 1),
+                )
+        )
+        mac.act("SPI_READ_32_CS",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextState("SPI_READ_32_A0"),
+                )
+        )
+        mac.act("SPI_READ_32_A0",
+                NextValue(spi_do, 0x0c), # 32-bit address write for "fast read" command
+                NextValue(spi_req, 1),
+                NextState("SPI_READ_32_A1"),
+        )
+        mac.act("SPI_READ_32_A1",
+                NextValue(spi_do, rom_addr[24:] & 0x7), # queue up MSB to send, leave req high; mask off unused high bits
+                If(spi_ack,
+                   NextState("SPI_READ_32_A2"),
+                )
+        )
+        mac.act("SPI_READ_32_A2",
+                NextValue(spi_do, rom_addr[16:24]),
+                If(spi_ack,
+                   NextState("SPI_READ_32_A3"),
+                )
+        )
+        mac.act("SPI_READ_32_A3",
+                NextValue(spi_do, rom_addr[8:16]),
+                If(spi_ack,
+                   NextState("SPI_READ_32_A4"),
+                )
+        )
+        mac.act("SPI_READ_32_A4",
+                NextValue(spi_do, rom_addr[:8]),
+                If(spi_ack,
+                   NextState("SPI_READ_32_A5"),
+                )
+        )
+        mac.act("SPI_READ_32_A5",
+                NextValue(spi_do, 0),
+                If(spi_ack,
+                   NextState("SPI_READ_32_DUMMY")
+                )
+        )
+        mac.act("SPI_READ_32_DUMMY",
+                NextValue(spi_req, 0),
+                NextValue(addr_updated, 0),
+                If(spi_ack,
+                   NextState("SPI_READ_32"),
+                   NextValue(mac_count, 3),  # prep the MAC state counter to count out 4 bytes
+                ).Else(
+                    NextState("SPI_READ_32_DUMMY")
+                )
+        )
+
         # Handle ECS_n -----------------------------------------------------------------------------
         # treat ECS_N as an async signal -- just a "rough guide" of problems
         ecs_n = Signal()
@@ -418,206 +628,6 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                 ecc_reported.eq(0)
             )
         ]
-
-        # MAC machine -------------------------------------------------------------------------------
-        self.bus = wishbone.Interface()
-
-        self.command = CSRStorage(description="Write individual bits to issue special commands to SPI; setting multiple bits at once leads to undefined behavior.",
-        write_from_dev=True,
-        fields=[
-            CSRField("rdid", size=1, description="Issue a RDID command & update id register"),
-            CSRField("wrcr2_00", size=1, description="Write config register 2 address with cr2_00"),
-            CSRField("wakeup", size=1, description="Sequence through init & wakeup routine"),
-        ])
-        self.id = CSRStatus(description="ID code of FLASH, need to issue rdid command first", fields=[
-            CSRField("id", size=24, description="ID code of the device")
-        ])
-        self.cr2_00 = CSRStorage(description="Data to write to CR2", fields=[
-            CSRField("sopi", size=1, description="STR OPI enable (do not use with this PHY)"),
-            CSRField("dopi", size=1, description="DTR OPI enable"),
-        ])
-        # TODO: implement ECC detailed register readback, CRC checking
-
-        addr_updated = Signal()
-        d_to_wb = Signal(32) # data going back to wishbone
-        mac_count = Signal(5)
-        spi_addr_only = Signal()
-        self.submodules.mac = mac = FSM(reset_state="RESET")
-        mac.act("RESET",
-                NextValue(rom_addr, 0),
-                NextValue(self.spi_mode, 1),
-                NextValue(addr_updated, 0),
-                NextValue(d_to_wb, 0),
-                NextValue(cs_n, 1),
-                NextValue(has_dummy, 0),
-                NextValue(spi_so, 0),
-                NextValue(spi_req, 0),
-                NextValue(opi_do, 0),
-                NextValue(opi_req_tx, 0),
-                NextValue(opi_req_rx, 0),
-                NextValue(mac_count, 0),
-                NextValue(self.bus.ack, 0),
-                NextValue(spi_addr_only, 1),
-                NextState("WAKEUP_PRE"),
-        )
-        mac.act("IDLE",
-                NextValue(self.bus.ack, 0),
-                If((self.bus.cyc == 1) & (self.bus.stb == 1) & (self.bus.we == 0) & ((self.bus.cti == 2) | (self.bus.cti == 7) | (self.bus.cti == 0) ), # "classic" read
-                   If(rom_addr[2:] != self.bus.adr,
-                      NextValue(rom_addr, Cat(Signal(2, reset=0), self.bus.adr)),
-                      NextValue(addr_updated, 1),
-                      NextValue(cs_n, 1), # raise CS in anticipation of a new address cycle
-                   ).Else(
-                       NextValue(addr_updated, 0),
-                       NextValue(cs_n, 0),
-                   ),
-
-                   If(self.config.fields.opi_mode,
-                      NextState("OPI_8DTRD_32")
-                   ).Else(
-                       # assume: cs_n is low, and address is in the right place
-                       NextState("SPI_READ_32"),
-                       NextValue(mac_count, 3), # prep the MAC state counter to count out 4 bytes
-                   )
-                ).Elif(self.command.fields.wakeup,
-                       NextValue(cs_n, 1),
-                       NextValue(self.command.storage, 0),  # clear all pending commands
-                       NextState("WAKEUP_PRE"),
-                ).Elif(self.command.fields.wrcr2_00,
-                       NextValue(cs_n, 1),
-                       NextValue(self.command.storage, 0),
-                       NextState("WRCR2_00")
-                )
-        )
-        mac.act("OPI_8DTRD_32",
-                # gutter for now
-        )
-        mac.act("WRCR2_00",
-                # gutter for now
-        )
-        mac.act("WAKEUP_PRE",
-                NextValue(cs_n, 1), # why isn't this sticking? i shouldn't have to put this here
-                NextValue(mac_count, 4),
-                NextState("WAKEUP_PRE_CS_WAIT")
-        )
-        mac.act("WAKEUP_PRE_CS_WAIT",
-                NextValue(mac_count, mac_count-1),
-                If(mac_count == 0,
-                   NextState("WAKEUP"),
-                   NextValue(cs_n, 0),
-                )
-        )
-        mac.act("WAKEUP",
-                NextValue(spi_so, 0xff),
-                NextValue(spi_req, 1),
-                NextValue(has_dummy, 0),
-                NextState("WAKEUP_1")
-        )
-        mac.act("WAKEUP_1",
-                NextValue(spi_req, 0),
-                If(spi_ack,
-                   NextValue(cs_n, 1), # raise CS
-                   NextValue(mac_count, 4), # for >4 cycles per specsheet
-                   NextState("WAKEUP_2")
-                )
-        )
-        mac.act("WAKEUP_2",
-                NextValue(mac_count, mac_count-1),
-                If(mac_count == 0,
-                   NextValue(cs_n, 0),
-                   NextValue(spi_so, 0xab),  # wakeup from deep sleep
-                   NextValue(spi_req, 1),
-                   NextState("WAKEUP_3"),
-                )
-        )
-        mac.act("WAKEUP_3",
-                NextValue(spi_req, 0),
-                If(spi_ack,
-                   NextValue(cs_n, 1),  # raise CS
-                   NextValue(mac_count, 4),  # for >4 cycles per specsheet
-                   NextState("WAKEUP_4")
-                   )
-        )
-        mac.act("WAKEUP_4",
-                NextValue(mac_count, mac_count-1),
-                If(mac_count == 0,
-                   NextValue(cs_n, 0),  # prime with a read cycle
-                   NextValue(spi_addr_only, 1),
-                   NextState("SPI_READ_32_A0"), # set the address only, so the CS can stay low
-                )
-        )
-        mac.act("SPI_READ_32",
-                If(addr_updated,
-                   # assume: cs_n == 1 coming into this state as set up by IDLE exit condition
-                   # warning: datasheet is ambiguous about CS high time, might be 10ns, might be 40ns
-                   NextState("SPI_READ_32_A0"),
-                   NextValue(cs_n, 0),
-                   NextValue(has_dummy, 0),
-                ).Else(
-                    If(mac_count > 0,
-                       NextValue(has_dummy, 0),
-                       NextValue(spi_req, 1),
-                       NextState("SPI_READ_32_D")
-                    ).Else(
-                        NextValue(self.bus.dat_r, Cat(spi_di, d_to_wb[8:])),
-                        NextValue(self.bus.ack, 1),
-                        NextState("IDLE")
-                    )
-                )
-        )
-        mac.act("SPI_READ_32_D",
-                If(spi_ack,
-                   # shift in one byte at a time to d_to_wb(32)
-                   NextValue(d_to_wb, Cat(spi_di,d_to_wb[8:])),
-                   NextValue(mac_count, mac_count - 1),
-                   NextState("SPI_READ_32")
-                )
-        )
-        mac.act("SPI_READ_32_A0",
-                NextValue(spi_so, 0x0c), # 32-bit address write for "fast read" command
-                NextValue(spi_req, 1),
-                NextState("SPI_READ_32_A1"),
-        )
-        mac.act("SPI_READ_32_A1",
-                NextValue(spi_so, rom_addr[24:]), # queue up MSB to send, leave req high
-                If(spi_ack,
-                   NextState("SPI_READ_32_A2"),
-                )
-        )
-        mac.act("SPI_READ_32_A2",
-                NextValue(spi_so, rom_addr[16:24]),
-                If(spi_ack,
-                   NextState("SPI_READ_32_A3"),
-                )
-        )
-        mac.act("SPI_READ_32_A3",
-                NextValue(spi_so, rom_addr[8:16]),
-                If(spi_ack,
-                   NextState("SPI_READ_32_A4"),
-                )
-        )
-        mac.act("SPI_READ_32_A4",
-                NextValue(spi_so, rom_addr[:8]),
-                If(spi_ack,
-                   NextState("SPI_READ_32_A5"),
-                )
-        )
-        mac.act("SPI_READ_32_A5",
-                NextValue(spi_so, 0),
-                If(spi_ack,
-                   NextState("SPI_READ_32_DUMMY")
-                )
-        )
-        mac.act("SPI_READ_32_DUMMY",
-                NextValue(spi_req, 0),
-                NextValue(addr_updated, 0),
-                If(spi_ack & ~spi_addr_only,
-                   NextState("SPI_READ_32")
-                ).Elif(spi_ack & spi_addr_only,
-                   NextValue(spi_addr_only, 0),
-                   NextState("IDLE")
-                )
-        )
 
 
 
