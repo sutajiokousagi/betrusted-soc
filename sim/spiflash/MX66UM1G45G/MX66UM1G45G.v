@@ -69,7 +69,7 @@
         `endif
 
 
-        `define File_Name                "none"         // Flash data file name for normal array
+        `define File_Name                "../betrusted-soc.init" // Flash data file name for normal array
         `define File_Name_Secu           "none"         // Flash data file name for security region
         `define File_Name_SFDP           "none"         // Flash data file name for SFDP region
         `define VSecur_Reg1_0            2'b00          // security register[1:0]
@@ -118,7 +118,7 @@ module MX66UM1G45G( SCLK,
     /* Density STATE parameter                                              */                  
     /*----------------------------------------------------------------------*/
     parameter   A_MSB           = 26,            
-                TOP_Add         = 27'h7ffffff,
+                TOP_Add         = 16'hffff, //27'h7ffffff,  // CHANGED TO SPEED UP SIMULATION
                 A_MSB_OTP       = 9,                
                 Secur_TOP_Add   = 10'h3ff,
                 Sector_MSB      = 14,
