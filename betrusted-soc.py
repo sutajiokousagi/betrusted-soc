@@ -741,7 +741,6 @@ class BetrustedSoC(SoCCore):
             sclk_instance_name="SCLK_ODDR"
             iddr_instance_name="SPI_IDDR"
             self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"), sclk_instance=sclk_instance_name, iddr_instance=iddr_instance_name)
-            self.sync += [ self.spinor.do.eq(self.spinor.di), self.spinor.mosi.eq(self.spinor.miso) ] # loopback for testing only
             # reminder to self: the {{ and }} overloading is because Python treats these as special in strings, so {{ -> { in actual constraint
             # NOTE: ECSn is deliberately not constrained -- it's more or less async (0-10ns delay on the signal, only meant to line up with "block" region
 
