@@ -180,10 +180,18 @@ wire ecsb;
 wire csn;
 reg reset;
 
+reg fpga_reset;
+
 initial begin
   reset = 1'b1;
-  #1000;
+  #11_000;
   reset = 1'b0;
+end
+
+initial begin
+  fpga_reset = 1'b1;  // fpga reset is extra-long to get past init delays of SPINOR; in reality, this is all handled by the config engine
+  #40_000;
+  fpga_reset = 1'b0;
 end   
 
 MX66UM1G45G rom(
@@ -203,7 +211,7 @@ top dut (
     .spiflash_8x_sclk(sclk),
 
     .clk12(clk12),
-    .rst(reset)
+    .rst(fpga_reset)
 );
 
 endmodule""")
@@ -223,8 +231,8 @@ def run_sim(gui=False):
     os.system(call_cmd + "cd run && xvlog ../../glbl.v")
     os.system(call_cmd + "cd run && xvlog top.v -sv")
     os.system(call_cmd + "cd run && xvlog top_tb.v -sv ")
-    os.system(call_cmd + "cd run && xvlog ../../..//deps/litex/litex/soc/cores/cpu/vexriscv/verilog/VexRiscv.v")
-    os.system(call_cmd + "cd run && xvlog ../../../betrusted-soc/gateware/spimemio.v")
+    os.system(call_cmd + "cd run && xvlog ../../../deps/litex/litex/soc/cores/cpu/vexriscv/verilog/VexRiscv.v")
+    os.system(call_cmd + "cd run && xvlog ../../../gateware/spimemio.v")
     os.system(call_cmd + "cd run && xvlog ../MX66UM1G45G/MX66UM1G45G.v")
     os.system(call_cmd + "cd run && xelab -debug typical top_tb glbl -s top_tb_sim -L unisims_ver -L unimacro_ver -L SIMPRIM_VER -L secureip -L $xsimdir/xil_defaultlib -timescale 1ns/1ps")
     if gui:
