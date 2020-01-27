@@ -187,6 +187,9 @@ def run_sim(gui=False):
 
 
 def main():
+    import subprocess
+    subprocess.Popen(['cp', '../bios/linker_rom.ld', '../bios/linker.ld'])
+
     generate_top()
     generate_top_tb()
     run_sim(gui=True)

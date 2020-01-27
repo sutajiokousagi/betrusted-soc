@@ -207,8 +207,9 @@ def run_sim(gui=False):
     else:
         os.system(call_cmd + "cd run && xsim top_tb_sim -runall")
 
-
 def main():
+    import subprocess
+    subprocess.Popen(['cp', '../bios/linker_rom.ld', '../bios/linker.ld'])
     generate_top()
     generate_top_tb()
     run_sim(gui=True)
