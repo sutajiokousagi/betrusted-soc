@@ -5,7 +5,8 @@ from litex.soc.integration.doc import AutoDoc, ModuleDoc
 from migen.genlib.cdc import MultiReg
 
 class SpiOpi(Module, AutoCSR, AutoDoc):
-    def __init__(self, pads, dqs_delay_taps=0, dq_delay_taps=31, sclk_instance="SCLK_ODDR", iddr_instance="SPI_IDDR"):
+    def __init__(self, pads, dq_delay_taps=0, sclk_name="SCLK_ODDR",
+                 iddr_name="SPI_IDDR", miso_name="MISO_FDRE", sim=False):
         self.intro = ModuleDoc("""
         SpiOpi implements a dual-mode SPI or OPI interface. OPI is an octal (8-bit) wide
         variant of SPI, which is unique to Macronix parts. It is concurrently interoperable
@@ -45,7 +46,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
             CSRField("dummy", size=5, description="Number of dummy cycles", reset=10),
         ])
 
-        delay_type="FIXED" # FIXED for timing closure analysis; change to "VAR_LOAD" for production if runtime adjustments are needed
+        delay_type="VAR_LOAD" # FIXED for timing closure analysis; change to "VAR_LOAD" for production if runtime adjustments are needed
 
         # DQS input conditioning -----------------------------------------------------------------
         dqs_delayed = Signal()
@@ -102,39 +103,43 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                 i_C=ClockSignal(), i_R=ResetSignal(), i_S=0, i_CE=1,
                 i_D1=do_rise[i], i_D2=do_fall[i], o_Q=dq.o[i-1],
             )
-            if i == 1: # only wire up o_CNTVALUEOUT for one instance
-                self.specials += Instance("IDELAYE2",
-                         p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                         p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200,
-                         p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
+            if sim == False:
+                if i == 1: # only wire up o_CNTVALUEOUT for one instance
+                    self.specials += Instance("IDELAYE2",
+                             p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
+                             p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200.0,
+                             p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
-                         i_C=ClockSignal(),
-                         i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
-                         i_LDPIPEEN=0, i_INC=self.delay_config.fields.inc,
-                         i_CNTVALUEIN=self.delay_config.fields.d, o_CNTVALUEOUT=self.delay_status.fields.q,
-                         i_IDATAIN=dq.i[i-1], o_DATAOUT=dq_delayed[i],
-                ),
-            else: # don't wire up o_CNTVALUEOUT for others
-                self.specials += Instance("IDELAYE2",
-                          p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                          p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE",
-                          p_REFCLK_FREQUENCY=200,
-                          p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
+                             i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0,
+                             i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
+                             i_LDPIPEEN=0, i_INC=self.delay_config.fields.inc,
+                             i_CNTVALUEIN=self.delay_config.fields.d, o_CNTVALUEOUT=self.delay_status.fields.q,
+                             i_IDATAIN=dq.i[i-1], o_DATAOUT=dq_delayed[i],
+                    ),
+                else: # don't wire up o_CNTVALUEOUT for others
+                    self.specials += Instance("IDELAYE2",
+                              p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
+                              p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200.0,
+                              p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
-                          i_C=ClockSignal(),
-                          i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
-                          i_LDPIPEEN=0, i_INC=self.delay_config.fields.inc,
-                          i_CNTVALUEIN=self.delay_config.fields.d,
-                          i_IDATAIN=dq.i[i-1], o_DATAOUT=dq_delayed[i],
-              ),
-            self.specials += Instance("IDDR", name="SPI_IDDR{}".format(str(i)),
+                              i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0,
+                              i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
+                              i_LDPIPEEN=0, i_INC=self.delay_config.fields.inc,
+                              i_CNTVALUEIN=self.delay_config.fields.d,
+                              i_IDATAIN=dq.i[i-1], o_DATAOUT=dq_delayed[i],
+                  ),
+            else:
+                self.comb += dq_delayed[i].eq(dq.i[i-1])
+            self.specials += Instance("IDDR", name="{}{}".format(iddr_name, str(i)),
                 p_DDR_CLK_EDGE="SAME_EDGE_PIPELINED", # higher latency, but easier timing closure
                 i_C=dqs_iobuf, i_R=ResetSignal(), i_S=0, i_CE=1,
                 i_D=dq_delayed[i], o_Q1=di_rise[i], o_Q2=di_fall[i],
             )
         # SPI SDR register
         self.specials += [
-            Instance("FDRE", i_C=~ClockSignal("spinor"), i_D=dq.i[0], i_CE=1, i_R=0, o_Q=self.miso)
+            Instance("FDRE", name="{}".format(miso_name), i_C=~ClockSignal("spinor"), i_CE=1, i_R=0, o_Q=self.miso,
+                     i_D=dq_delayed[1],
+            )
         ]
 
         # bit 0 (MOSI) is special-cased to handle SPI mode
@@ -148,23 +153,28 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
               i_C=ClockSignal(), i_R=ResetSignal(), i_S=0, i_CE=1,
               i_D1=do_mux_rise, i_D2=do_mux_fall, o_Q=dq_mosi.o,
             ),
+            Instance("IDDR",
+              p_DDR_CLK_EDGE="SAME_EDGE_PIPELINED",  # higher latency, but easier timing closure
+              i_C=dqs_iobuf, i_R=ResetSignal(), i_S=0, i_CE=1,
+              o_Q1=di_rise[0], o_Q2=di_fall[0], i_D=dq_delayed[0],
+            ),
+        ]
+        if sim == False:
+            self.specials += [
             Instance("IDELAYE2",
                      p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                     p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200,
+                     p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200.0,
                      p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
-                     i_C=ClockSignal(),
+                     i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0,
                      i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
                      i_LDPIPEEN=0, i_INC=self.delay_config.fields.inc,
                      i_CNTVALUEIN=self.delay_config.fields.d,
                      i_IDATAIN=dq_mosi.i, o_DATAOUT=dq_delayed[0],
-            ),
-            Instance("IDDR",
-              p_DDR_CLK_EDGE="SAME_EDGE_PIPELINED",  # higher latency, but easier timing closure
-              i_C=dqs_iobuf, i_R=ResetSignal(), i_S=0, i_CE=1,
-              i_D=dq_delayed[0], o_Q1=di_rise[0], o_Q2=di_fall[0],
-            ),
-        ]
+                     ),
+            ]
+        else:
+            self.comb += dq_delayed[0].eq(dq_mosi.i)
 
         # wire up SCLK interface
         clk_en = Signal()
@@ -174,7 +184,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                      i_CLK=0, i_GSR=0, i_GTS=0, i_KEYCLEARB=0, i_PACK=0, i_USRDONEO=1, i_USRDONETS=1,
                      i_USRCCLKO=0, i_USRCCLKTS=1,  # force to tristate
                      ),
-            Instance("ODDR", name=sclk_instance, # need to name this so we can constrain it properly
+            Instance("ODDR", name=sclk_name, # need to name this so we can constrain it properly
                      p_DDR_CLK_EDGE="SAME_EDGE",
                      i_C=ClockSignal("spinor"), i_R=ResetSignal("spinor"), i_S=0, i_CE=1,
                      i_D1=clk_en, i_D2=0, o_Q=pads.sclk,

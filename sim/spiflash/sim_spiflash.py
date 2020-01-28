@@ -33,6 +33,7 @@ sim_config = {
 #    "spi_clk_freq": 24e6,
     "sys_clk_freq": 100e6,  # Artix-side
     "spinor_clk_freq": 100e6,
+    "idelay_ref_freq": 200e6,
 }
 
 
@@ -94,17 +95,44 @@ class Platform(XilinxPlatform):
         XilinxPlatform.__init__(self, "", _io, toolchain="vivado")
 
 
-class CRG(Module):
+class CRG(Module, AutoCSR):
     def __init__(self, platform, core_config):
         # build a simulated PLL. You can add more pll.create_clkout() lines to add more clock frequencies as necessary
         self.clock_domains.cd_sys = ClockDomain()
         self.clock_domains.cd_spinor = ClockDomain()
+        self.clock_domains.cd_idelay_ref = ClockDomain()
 
         self.submodules.pll = pll = S7MMCM()
         self.comb += pll.reset.eq(platform.request("rst"))
         pll.register_clkin(platform.request("clk12"), sim_config["input_clk_freq"])
         pll.create_clkout(self.cd_sys, sim_config["sys_clk_freq"])
-        pll.create_clkout(self.cd_spinor, sim_config["spinor_clk_freq"], phase=60) # hard coded phase, check application code for value
+        pll.create_clkout(self.cd_spinor, sim_config["spinor_clk_freq"], phase=82.5) # hard coded phase, check application code for value
+        pll.create_clkout(self.cd_idelay_ref, sim_config["idelay_ref_freq"])
+
+        # Add an IDELAYCTRL primitive for the SpiOpi block
+        reset_counter = Signal(5, reset=31)  # 155ns @ 200MHz, min 59.28ns
+        ic_reset = Signal(reset=1)
+        self.sync.idelay_ref += \
+            If(reset_counter != 0,
+                reset_counter.eq(reset_counter - 1)
+            ).Else(
+                ic_reset.eq(0)
+            )
+        self.delay_rdy = Signal()
+        self.specials += Instance("IDELAYCTRL", i_REFCLK=self.cd_idelay_ref.clk, i_RST=ic_reset, o_RDY=self.delay_rdy)
+        self.ready = CSRStatus()
+        self.comb += self.ready.status.eq(self.delay_rdy)
+
+
+class WarmBoot(Module, AutoCSR):
+    def __init__(self, parent, reset_vector=0):
+        self.ctrl = CSRStorage(size=8)
+        self.addr = CSRStorage(size=32, reset=reset_vector)
+        self.do_reset = Signal()
+        # "Reset Key" is 0xac (0b101011xx)
+        self.comb += self.do_reset.eq((self.ctrl.storage & 0xfc) == 0xac)
+
+boot_offset    = 0x0 #0x500000 # enough space to hold 2x FPGA bitstreams before the firmware start
 
 class SimpleSim(SoCCore):
     mem_map = {
@@ -121,12 +149,20 @@ class SimpleSim(SoCCore):
                          cpu_type="vexriscv",
                          **kwargs)
 
+        kwargs["cpu_reset_address"] = self.mem_map["spiflash"]+boot_offset
+        self.submodules.reboot = WarmBoot(self, reset_vector=kwargs["cpu_reset_address"])
+        self.add_csr("reboot")
+        warm_reset = Signal()
+        self.comb += warm_reset.eq(self.reboot.do_reset)
+        self.cpu.cpu_params.update(i_externalResetVector=self.reboot.addr.storage)
+
         self.add_constant("SIMULATION", 1)
         self.add_constant("SPIFLASH_SIMULATION", 1)
 
         # instantiate the clock module
         self.submodules.crg = CRG(platform, sim_config)
-        self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/sim_config["sys_clk_freq"])
+        self.add_csr("crg")
+        # self.platform.add_period_constraint(self.crg.cd_sys.clk, 1e9/sim_config["sys_clk_freq"])
 
         self.platform.add_platform_command(
             "create_clock -name clk12 -period 83.3333 [get_nets clk12]")
@@ -141,8 +177,10 @@ class SimpleSim(SoCCore):
         SPI_FLASH_SIZE=128 * 1024 * 1024
         sclk_instance_name = "SCLK_ODDR"
         iddr_instance_name = "SPI_IDDR"
-        self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"), sclk_instance=sclk_instance_name,
-                                               iddr_instance=iddr_instance_name)
+        miso_instance_name = "MISO_FDRE"
+        self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"),
+                                               sclk_name=sclk_instance_name, iddr_name=iddr_instance_name,
+                                               miso_name=miso_instance_name, sim=True)
         platform.add_source("../../gateware/spimemio.v") ### NOTE: this actually doesn't help for SIM, but it reminds us to scroll to the bottom of this file and add it to the xvlog imports
         self.register_mem("spiflash", self.mem_map["spiflash"], self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")
@@ -159,6 +197,15 @@ def generate_top():
 ]
     vns = builder.build(run=False)
     soc.do_exit(vns)
+
+    # generate a .init file for the SPINOR memory based on the BIOS we want to boot
+    with open("run/software/bios/bios.bin", "rb") as ifile:
+        with open("betrusted-soc.init", "w") as ofile:
+            binfile = ifile.read()
+
+            for b in binfile:
+                ofile.write("{:02x}\n".format(b))
+
 #    platform.build(soc, build_dir="./run", run=False)  # run=False prevents synthesis from happening, but a top.v file gets kicked out
 
 # this generates a test bench wrapper verilog file, needed by the xilinx tools
@@ -242,6 +289,8 @@ def run_sim(gui=False):
 
 
 def main():
+    import subprocess
+    subprocess.Popen(['cp', '../bios/linker_spi.ld', '../bios/linker.ld'])
     generate_top()
     generate_top_tb()
     run_sim(gui=True)

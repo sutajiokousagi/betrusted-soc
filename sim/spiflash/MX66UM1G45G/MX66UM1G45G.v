@@ -118,7 +118,7 @@ module MX66UM1G45G( SCLK,
     /* Density STATE parameter                                              */                  
     /*----------------------------------------------------------------------*/
     parameter   A_MSB           = 26,            
-                TOP_Add         = 16'hffff, //27'h7ffffff,  // CHANGED TO SPEED UP SIMULATION
+                TOP_Add         = 20'hfffff, //27'h7ffffff,  // CHANGED TO SPEED UP SIMULATION
                 A_MSB_OTP       = 9,                
                 Secur_TOP_Add   = 10'h3ff,
                 Sector_MSB      = 14,

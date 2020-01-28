@@ -315,7 +315,7 @@ class CRG(Module, AutoCSR):
         mmcm.expose_drp()
 
         # Add an IDELAYCTRL primitive for the SpiOpi block
-        reset_counter = Signal(4, reset=31)  # 155ns @ 200MHz, min 59.28ns
+        reset_counter = Signal(5, reset=31)  # 155ns @ 200MHz, min 59.28ns
         ic_reset = Signal(reset=1)
         self.sync.clk200 += \
             If(reset_counter != 0,
@@ -642,7 +642,7 @@ class BetrustedSoC(SoCCore):
         self.register_mem("vexriscv_debug", 0xe00f0000, self.cpu.debug_bus, 0x100)
 
         # Clockgen cluster -------------------------------------------------------------------------
-        self.submodules.crg = CRG(platform, sys_clk_freq, spinor_edge_delay_ns=2.0)
+        self.submodules.crg = CRG(platform, sys_clk_freq, spinor_edge_delay_ns=2.2)
         self.add_csr("crg")
         self.comb += self.crg.warm_reset.eq(warm_reset)
 
@@ -740,7 +740,9 @@ class BetrustedSoC(SoCCore):
         else:
             sclk_instance_name="SCLK_ODDR"
             iddr_instance_name="SPI_IDDR"
-            self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"), sclk_instance=sclk_instance_name, iddr_instance=iddr_instance_name)
+            miso_instance_name="MISO_FDRE"
+            self.submodules.spinor = spinor.SpiOpi(platform.request("spiflash_8x"),
+                    sclk_name=sclk_instance_name, iddr_name=iddr_instance_name, miso_name=miso_instance_name)
             # reminder to self: the {{ and }} overloading is because Python treats these as special in strings, so {{ -> { in actual constraint
             # NOTE: ECSn is deliberately not constrained -- it's more or less async (0-10ns delay on the signal, only meant to line up with "block" region
 
@@ -763,6 +765,8 @@ class BetrustedSoC(SoCCore):
             self.platform.add_platform_command("set_input_delay -clock [get_clocks spiclk_out] -clock_fall -min 1 [get_ports spiflash_8x_dq[1]]")
             # corresponding false path on MISO DDR input when clocking SDR data
             self.platform.add_platform_command("set_false_path -from [get_clocks spiclk_out] -to [get_pin {}/D ]".format(iddr_instance_name + "1"))
+            # corresponding false path on MISO SDR input from DQS strobe
+            self.platform.add_platform_command("set_false_path -from [get_clocks spidqs] -to [get_pin {}/D ]".format(miso_instance_name))
 
             # constrain CLK-to-DQ output DDR delays; MOSI uses the same rules
             self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -max 1 [get_ports {{spiflash_8x_dq[*]}}]")
@@ -773,8 +777,8 @@ class BetrustedSoC(SoCCore):
             self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -min -1 [get_ports spiflash_8x_cs_n]") # -3 in reality
             self.platform.add_platform_command("set_output_delay -clock [get_clocks spiclk_out] -max 1 [get_ports spiflash_8x_cs_n]")  # 4.5 in reality
             # unconstrain OE path - we have like 10+ dummy cycles to turn the bus on wr->rd, and 2+ cycles to turn on end of read
-            self.platform.add_platform_command("set_false_path -through [ get_pins betrustedsoc_spinor_dq_mosi_oe_reg/Q ]")
-            self.platform.add_platform_command("set_false_path -through [ get_pins betrustedsoc_spinor_dq_oe_reg/Q ]")
+            self.platform.add_platform_command("set_false_path -through [ get_pins betrustedsoc_spiopi_dq_mosi_oe_reg/Q ]")
+            self.platform.add_platform_command("set_false_path -through [ get_pins betrustedsoc_spiopi_dq_oe_reg/Q ]")
 
         self.register_mem("spiflash", self.mem_map["spiflash"], self.spinor.bus, size=SPI_FLASH_SIZE)
         self.add_csr("spinor")

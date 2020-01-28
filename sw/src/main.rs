@@ -495,7 +495,7 @@ impl Repl {
             } else if self.cmd.trim() == "spi" {
                 // spi performance test
                 self.spi_perftest();
-            } else if self.cmd.trim() == "fast" {
+            } /* else if self.cmd.trim() == "fast" {
                 let mut spiconfig: u32 = readpac32!(self, SPINOR, cfg3, cfg2, cfg1, cfg0);
                 spiconfig |= 1 << 22;
                 writepac32!(spiconfig, self, SPINOR, cfg3, cfg2, cfg1, cfg0);
@@ -504,7 +504,7 @@ impl Repl {
                 delay_ms(&self.p, 5);
                 spiconfig &= 0x7FFF_FFFF;
                 writepac32!(spiconfig, self, SPINOR, cfg3, cfg2, cfg1, cfg0);
-            } else {
+            }*/ else {
                 self.text.add_text(&mut format!("{}: not recognized.", self.cmd.trim()));
             }
         }
