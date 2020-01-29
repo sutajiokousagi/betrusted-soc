@@ -6,7 +6,7 @@ from migen.genlib.cdc import MultiReg
 
 class SpiOpi(Module, AutoCSR, AutoDoc):
     def __init__(self, pads, dq_delay_taps=31, sclk_name="SCLK_ODDR",
-                 iddr_name="SPI_IDDR", miso_name="MISO_FDRE", sim=False):
+                 iddr_name="SPI_IDDR", miso_name="MISO_FDRE", sim=False, spiread=False):
         self.intro = ModuleDoc("""
         SpiOpi implements a dual-mode SPI or OPI interface. OPI is an octal (8-bit) wide
         variant of SPI, which is unique to Macronix parts. It is concurrently interoperable
@@ -719,31 +719,42 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                 NextValue(new_cycle, 1),
                 If(self.spi_mode, NextValue(self.bus.ack, 0)),
         )
-        mac.act("IDLE",
-                If(self.spi_mode, # this machine stays in idle once spi_mode is dropped
-                    NextValue(self.bus.ack, 0),
-                    If((self.bus.cyc == 1) & (self.bus.stb == 1) & (self.bus.we == 0) & (self.bus.cti != 7), # read cycle requested, not end-of-burst
-                       If( (rom_addr[2:] != self.bus.adr) & new_cycle,
-                          NextValue(rom_addr, Cat(Signal(2, reset=0), self.bus.adr)),
-                          NextValue(addr_updated, 1),
-                          NextValue(spi_cs_n, 1), # raise CS in anticipation of a new address cycle
-                          NextState("SPI_READ_32_CS"),
-                       ).Elif( (rom_addr[2:] == self.bus.adr) | (~new_cycle & self.bus.cti == 2),
-                               NextValue(mac_count, 3),  # get another beat of 4 bytes at the next address
-                               NextState("SPI_READ_32")
-                       ).Else(
-                           NextValue(addr_updated, 0),
-                           NextValue(spi_cs_n, 0),
-                           NextState("SPI_READ_32"),
-                           NextValue(mac_count, 3),  # prep the MAC state counter to count out 4 bytes
-                       ),
-                    ).Elif(self.command.fields.wakeup,
-                           NextValue(spi_cs_n, 1),
-                           NextValue(self.command.storage, 0),  # clear all pending commands
-                           NextState("WAKEUP_PRE"),
+        if spiread:
+            mac.act("IDLE",
+                    If(self.spi_mode, # this machine stays in idle once spi_mode is dropped
+                        NextValue(self.bus.ack, 0),
+                        If((self.bus.cyc == 1) & (self.bus.stb == 1) & (self.bus.we == 0) & (self.bus.cti != 7), # read cycle requested, not end-of-burst
+                           If( (rom_addr[2:] != self.bus.adr) & new_cycle,
+                              NextValue(rom_addr, Cat(Signal(2, reset=0), self.bus.adr)),
+                              NextValue(addr_updated, 1),
+                              NextValue(spi_cs_n, 1), # raise CS in anticipation of a new address cycle
+                              NextState("SPI_READ_32_CS"),
+                           ).Elif( (rom_addr[2:] == self.bus.adr) | (~new_cycle & self.bus.cti == 2),
+                                   NextValue(mac_count, 3),  # get another beat of 4 bytes at the next address
+                                   NextState("SPI_READ_32")
+                           ).Else(
+                               NextValue(addr_updated, 0),
+                               NextValue(spi_cs_n, 0),
+                               NextState("SPI_READ_32"),
+                               NextValue(mac_count, 3),  # prep the MAC state counter to count out 4 bytes
+                           ),
+                        ).Elif(self.command.fields.wakeup,
+                               NextValue(spi_cs_n, 1),
+                               NextValue(self.command.storage, 0),  # clear all pending commands
+                               NextState("WAKEUP_PRE"),
+                        )
                     )
-                )
-        )
+            )
+        else:
+            mac.act("IDLE",
+                    If(self.spi_mode, # this machine stays in idle once spi_mode is dropped
+                        If(self.command.fields.wakeup,
+                               NextValue(spi_cs_n, 1),
+                               NextValue(self.command.storage, 0),  # clear all pending commands
+                               NextState("WAKEUP_PRE"),
+                        )
+                    )
+            )
 
         #---------  wakup chip ------------------------------
         mac.act("WAKEUP_PRE",
@@ -891,94 +902,94 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                 )
         )
 
-
-        #---------  SPI read machine ------------------------------
-        mac.act("SPI_READ_32",
-                If(addr_updated,
-                   NextState("SPI_READ_32_CS"),
-                   NextValue(has_dummy, 0),
-                   NextValue(mac_count, 3),
-                   NextValue(spi_cs_n, 1),
-                   NextValue(spi_req, 0),
-                ).Else(
-                    If(mac_count > 0,
+        if spiread:
+            #---------  SPI read machine ------------------------------
+            mac.act("SPI_READ_32",
+                    If(addr_updated,
+                       NextState("SPI_READ_32_CS"),
                        NextValue(has_dummy, 0),
-                       NextValue(spi_req, 1),
-                       NextState("SPI_READ_32_D")
+                       NextValue(mac_count, 3),
+                       NextValue(spi_cs_n, 1),
+                       NextValue(spi_req, 0),
                     ).Else(
-                        NextValue(spi_req, 0),
-                        If(spi_ack,
-                           If(self.spi_mode,  # protect these in a spi_mode mux to prevent excess inference of logic to handle otherwise implicit dual-master situation
-                               NextValue(self.bus.dat_r, Cat(d_to_wb[8:],spi_di)),
-                               NextValue(self.bus.ack, 1),
-                           ),
-                           NextValue(rom_addr, rom_addr + 1),
-                           NextState("IDLE")
+                        If(mac_count > 0,
+                           NextValue(has_dummy, 0),
+                           NextValue(spi_req, 1),
+                           NextState("SPI_READ_32_D")
+                        ).Else(
+                            NextValue(spi_req, 0),
+                            If(spi_ack,
+                               If(self.spi_mode,  # protect these in a spi_mode mux to prevent excess inference of logic to handle otherwise implicit dual-master situation
+                                   NextValue(self.bus.dat_r, Cat(d_to_wb[8:],spi_di)),
+                                   NextValue(self.bus.ack, 1),
+                               ),
+                               NextValue(rom_addr, rom_addr + 1),
+                               NextState("IDLE")
+                            )
                         )
                     )
-                )
-        )
-        mac.act("SPI_READ_32_D",
-                If(spi_ack,
-                   # shift in one byte at a time to d_to_wb(32)
-                   NextValue(d_to_wb, Cat(d_to_wb[8:],spi_di,)),
-                   NextValue(mac_count, mac_count - 1),
-                   NextState("SPI_READ_32"),
-                   NextValue(rom_addr, rom_addr + 1),
-                )
-        )
-        mac.act("SPI_READ_32_CS",
-                NextValue(mac_count, mac_count-1),
-                If(mac_count == 0,
-                   NextValue(spi_cs_n, 0),
-                   NextState("SPI_READ_32_A0"),
-                )
-        )
-        mac.act("SPI_READ_32_A0",
-                NextValue(spi_do, 0x0c), # 32-bit address write for "fast read" command
-                NextValue(spi_req, 1),
-                NextState("SPI_READ_32_A1"),
-        )
-        mac.act("SPI_READ_32_A1",
-                NextValue(spi_do, rom_addr[24:] & 0x7), # queue up MSB to send, leave req high; mask off unused high bits
-                If(spi_ack,
-                   NextState("SPI_READ_32_A2"),
-                )
-        )
-        mac.act("SPI_READ_32_A2",
-                NextValue(spi_do, rom_addr[16:24]),
-                If(spi_ack,
-                   NextState("SPI_READ_32_A3"),
-                )
-        )
-        mac.act("SPI_READ_32_A3",
-                NextValue(spi_do, rom_addr[8:16]),
-                If(spi_ack,
-                   NextState("SPI_READ_32_A4"),
-                )
-        )
-        mac.act("SPI_READ_32_A4",
-                NextValue(spi_do, rom_addr[:8]),
-                If(spi_ack,
-                   NextState("SPI_READ_32_A5"),
-                )
-        )
-        mac.act("SPI_READ_32_A5",
-                NextValue(spi_do, 0),
-                If(spi_ack,
-                   NextState("SPI_READ_32_DUMMY")
-                )
-        )
-        mac.act("SPI_READ_32_DUMMY",
-                NextValue(spi_req, 0),
-                NextValue(addr_updated, 0),
-                If(spi_ack,
-                   NextState("SPI_READ_32"),
-                   NextValue(mac_count, 3),  # prep the MAC state counter to count out 4 bytes
-                ).Else(
-                    NextState("SPI_READ_32_DUMMY")
-                )
-        )
+            )
+            mac.act("SPI_READ_32_D",
+                    If(spi_ack,
+                       # shift in one byte at a time to d_to_wb(32)
+                       NextValue(d_to_wb, Cat(d_to_wb[8:],spi_di,)),
+                       NextValue(mac_count, mac_count - 1),
+                       NextState("SPI_READ_32"),
+                       NextValue(rom_addr, rom_addr + 1),
+                    )
+            )
+            mac.act("SPI_READ_32_CS",
+                    NextValue(mac_count, mac_count-1),
+                    If(mac_count == 0,
+                       NextValue(spi_cs_n, 0),
+                       NextState("SPI_READ_32_A0"),
+                    )
+            )
+            mac.act("SPI_READ_32_A0",
+                    NextValue(spi_do, 0x0c), # 32-bit address write for "fast read" command
+                    NextValue(spi_req, 1),
+                    NextState("SPI_READ_32_A1"),
+            )
+            mac.act("SPI_READ_32_A1",
+                    NextValue(spi_do, rom_addr[24:] & 0x7), # queue up MSB to send, leave req high; mask off unused high bits
+                    If(spi_ack,
+                       NextState("SPI_READ_32_A2"),
+                    )
+            )
+            mac.act("SPI_READ_32_A2",
+                    NextValue(spi_do, rom_addr[16:24]),
+                    If(spi_ack,
+                       NextState("SPI_READ_32_A3"),
+                    )
+            )
+            mac.act("SPI_READ_32_A3",
+                    NextValue(spi_do, rom_addr[8:16]),
+                    If(spi_ack,
+                       NextState("SPI_READ_32_A4"),
+                    )
+            )
+            mac.act("SPI_READ_32_A4",
+                    NextValue(spi_do, rom_addr[:8]),
+                    If(spi_ack,
+                       NextState("SPI_READ_32_A5"),
+                    )
+            )
+            mac.act("SPI_READ_32_A5",
+                    NextValue(spi_do, 0),
+                    If(spi_ack,
+                       NextState("SPI_READ_32_DUMMY")
+                    )
+            )
+            mac.act("SPI_READ_32_DUMMY",
+                    NextValue(spi_req, 0),
+                    NextValue(addr_updated, 0),
+                    If(spi_ack,
+                       NextState("SPI_READ_32"),
+                       NextValue(mac_count, 3),  # prep the MAC state counter to count out 4 bytes
+                    ).Else(
+                        NextState("SPI_READ_32_DUMMY")
+                    )
+            )
 
         # Handle ECS_n -----------------------------------------------------------------------------
         # treat ECS_N as an async signal -- just a "rough guide" of problems
