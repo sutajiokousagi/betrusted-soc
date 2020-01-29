@@ -734,7 +734,7 @@ class BetrustedSoC(SoCCore):
         self.add_csr("power")
 
         # SPI flash controller ---------------------------------------------------------------------
-        legacy_spi = True
+        legacy_spi = False
         if legacy_spi:
             self.submodules.spinor = spinor.SPINOR(platform, platform.request("spiflash_1x"), size=SPI_FLASH_SIZE)
         else:

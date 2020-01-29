@@ -105,7 +105,7 @@ class CRG(Module, AutoCSR):
         self.submodules.pll = pll = S7MMCM()
         self.comb += pll.reset.eq(platform.request("rst"))
         pll.register_clkin(platform.request("clk12"), sim_config["input_clk_freq"])
-        pll.create_clkout(self.cd_sys, sim_config["sys_clk_freq"])
+        pll.create_clkout(self.cd_sys, sim_config["sys_clk_freq"], margin=0)
         pll.create_clkout(self.cd_spinor, sim_config["spinor_clk_freq"], phase=82.5) # hard coded phase, check application code for value
         pll.create_clkout(self.cd_idelay_ref, sim_config["idelay_ref_freq"])
 
@@ -218,7 +218,7 @@ module top_tb();
 
 reg clk12;
 initial clk12 = 1'b1;
-always #41.16666 clk12 = ~clk12;
+always #41.66666 clk12 = ~clk12;
 
 wire sclk;
 wire [7:0] sio;
