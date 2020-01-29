@@ -223,6 +223,7 @@ always #41.16666 clk12 = ~clk12;
 wire sclk;
 wire [7:0] sio;
 wire dqs;
+reg  dqs_delay;  // simulate the clock delay of the FPGA 
 wire ecsb;
 wire csn;
 reg reset;
@@ -250,10 +251,12 @@ MX66UM1G45G rom(
   .RESET(~reset)
 );
 
+always #2.5 dqs_delay = dqs;  // this inserts the equivalent FPGA input clock buffer delay
+
 top dut (
     .spiflash_8x_cs_n(csn),
     .spiflash_8x_dq(sio),
-    .spiflash_8x_dqs(dqs),
+    .spiflash_8x_dqs(dqs_delay),
     .spiflash_8x_ecs_n(ecsb),
     .spiflash_8x_sclk(sclk),
 

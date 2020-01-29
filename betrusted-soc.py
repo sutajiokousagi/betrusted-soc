@@ -616,7 +616,7 @@ class BetrustedSoC(SoCCore):
         ## unique AES key, creating a root of trust that offers a defense against trivial patch attacks.
 
         # SoCCore ----------------------------------------------------------------------------------
-        SoCCore.__init__(self, platform, sys_clk_freq,
+        SoCCore.__init__(self, platform, sys_clk_freq, csr_data_width=8,
             integrated_rom_size  = 0,
             integrated_sram_size = 0x20000,
             ident                = "betrusted.io LiteX Base SoC",
@@ -734,7 +734,7 @@ class BetrustedSoC(SoCCore):
         self.add_csr("power")
 
         # SPI flash controller ---------------------------------------------------------------------
-        legacy_spi = False
+        legacy_spi = True
         if legacy_spi:
             self.submodules.spinor = spinor.SPINOR(platform, platform.request("spiflash_1x"), size=SPI_FLASH_SIZE)
         else:
@@ -815,8 +815,8 @@ class BetrustedSoC(SoCCore):
         # self.comb += gpio_pads[2].eq(self.trng_osc.trng_raw)
 
         # AES block --------------------------------------------------------------------------------
-        # self.submodules.aes = Aes(platform)
-        # self.add_csr("aes")
+        #self.submodules.aes = Aes(platform)
+        #self.add_csr("aes")
 
         ## TODO: audio, wide-width/fast SPINOR
 

@@ -42,7 +42,6 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         cs_n = Signal(reset=1)
 
         self.config = CSRStorage(fields=[
-            CSRField("opi_mode", size=1, description="Set to `1` to enable OPI mode on PHY. Must first setup CR2 before enabling this bit."),
             CSRField("dummy", size=5, description="Number of dummy cycles", reset=10),
         ])
 
@@ -64,6 +63,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
             Instance("BUFR", i_I=pads.dqs, o_O=dqs_iobuf),
         ]
 
+
         # DQ connections -------------------------------------------------------------------------
         # PHY API
         self.do = Signal(16) # OPI data to SPI
@@ -75,14 +75,15 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
 
         # Delay programming API
         self.delay_config = CSRStorage(fields=[
-            CSRField("d", size=5, description="Delay amount; each increment is 78ps"),
-            CSRField("load", size=1, description="Set delay taps to delay_d"),
-            CSRField("inc", size=1, description="`1` increments delay, `0` decrements delay when CE is pulsed"),
-            CSRField("ce", size=1, pulse=True, description="Writing to this register changes increment according to inc"),
+            CSRField("d", size=5, description="Delay amount; each increment is 78ps", reset=31),
+            CSRField("load", size=1, description="Force delay taps to delay_d"),
         ])
         self.delay_status = CSRStatus(fields=[
             CSRField("q", size=5, description="Readback of current delay amount, useful if inc/ce is used to set"),
         ])
+        self.delay_update = Signal()
+        self.hw_delay_load = Signal()
+        self.sync += self.delay_update.eq(self.hw_delay_load | self.delay_config.fields.load)
 
         # Break system API into rising/falling edge samples
         do_rise = Signal(8) # data output presented on the rising edge
@@ -110,9 +111,8 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                              p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200.0,
                              p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
-                             i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0,
-                             i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
-                             i_LDPIPEEN=0, i_INC=self.delay_config.fields.inc,
+                             i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0, i_LDPIPEEN=0, i_INC=0, i_CE=0,
+                             i_LD=self.delay_update,
                              i_CNTVALUEIN=self.delay_config.fields.d, o_CNTVALUEOUT=self.delay_status.fields.q,
                              i_IDATAIN=dq.i[i-1], o_DATAOUT=dq_delayed[i],
                     ),
@@ -122,16 +122,15 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                               p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200.0,
                               p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
-                              i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0,
-                              i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
-                              i_LDPIPEEN=0, i_INC=self.delay_config.fields.inc,
+                              i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0, i_LDPIPEEN=0, i_INC=0, i_CE=0,
+                              i_LD=self.delay_update,
                               i_CNTVALUEIN=self.delay_config.fields.d,
                               i_IDATAIN=dq.i[i-1], o_DATAOUT=dq_delayed[i],
                   ),
             else:
                 self.comb += dq_delayed[i].eq(dq.i[i-1])
             self.specials += Instance("IDDR", name="{}{}".format(iddr_name, str(i)),
-                p_DDR_CLK_EDGE="SAME_EDGE_PIPELINED", # higher latency, but easier timing closure
+                p_DDR_CLK_EDGE="SAME_EDGE_PIPELINED",
                 i_C=dqs_iobuf, i_R=ResetSignal(), i_S=0, i_CE=1,
                 i_D=dq_delayed[i], o_Q1=di_rise[i], o_Q2=di_fall[i],
             )
@@ -154,7 +153,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
               i_D1=do_mux_rise, i_D2=do_mux_fall, o_Q=dq_mosi.o,
             ),
             Instance("IDDR",
-              p_DDR_CLK_EDGE="SAME_EDGE_PIPELINED",  # higher latency, but easier timing closure
+              p_DDR_CLK_EDGE="SAME_EDGE_PIPELINED",
               i_C=dqs_iobuf, i_R=ResetSignal(), i_S=0, i_CE=1,
               o_Q1=di_rise[0], o_Q2=di_fall[0], i_D=dq_delayed[0],
             ),
@@ -166,9 +165,8 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                      p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="FALSE", p_REFCLK_FREQUENCY=200.0,
                      p_PIPE_SEL="FALSE", p_IDELAY_VALUE=dq_delay_taps, p_IDELAY_TYPE=delay_type,
 
-                     i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0,
-                     i_LD=self.delay_config.fields.load, i_CE=self.delay_config.fields.ce,
-                     i_LDPIPEEN=0, i_INC=self.delay_config.fields.inc,
+                     i_C=ClockSignal(), i_CINVCTRL=0, i_REGRST=0, i_LDPIPEEN=0, i_INC=0, i_CE=0,
+                     i_LD=self.delay_update,
                      i_CNTVALUEIN=self.delay_config.fields.d,
                      i_IDATAIN=dq_mosi.i, o_DATAOUT=dq_delayed[0],
                      ),
@@ -212,9 +210,11 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         chip select is asserted, or before it is de-asserted; and that the chip select "high" times
         are adequate (1 cycle between reads, 4 cycles for all other operations)
         
-        By default, the interface runs in SPI; OPI sequences are only used if the `opi_mode` bit is set.
+        On boot, the interface runs in SPI; once the wakeup sequence is executed, the chip permanently
+        switches to OPI mode unless the CR2 registers are written to fall back, or the 
+        reset to the chip is asserted.
           
-        The PHY layers are responsible solely for the following tasks:
+        The PHY layers are responsible for the following tasks:
         * Serializing and deserializing data, standardized on 8 bits for SPI and 16 bits for OPI
         * counting dummy cycles
         * managing the clock enable
@@ -224,6 +224,58 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         one cycle and then ignored until the PHY issues an "ack" that the current cycle is complete. 
         Thus holding "req" high can allow the PHY to back-to-back issue cycles without pause.
         
+        In OPI mode, read data is `mesochronous`, that is, they return at precisely the same frequency
+        as SCLK, but with an unknown phase relationship. The DQS strobe is provided as a "hint" to
+        the receiving side to help retime the data. 
+        
+        DQS is basically an extra data output that is guaranteed to change polarity with each
+        data byte; the skew mismatch of DQS to data is within +/-0.6ns or so. It turns out the mere
+        act of routing the DQS into a BUFR buffer before clocking the data into an IDDR primitive
+        is sufficient to delay the DQS signal and meet setup and hold time on the IDDR. 
+        
+        Once captured by the IDDR, the data is fed into a dual-clock FIFO to make the transition
+        from the DQS to sysclk domains cleanly. 
+        
+        Because of the latency involved in going from pin->IDDR->FIFO, excess read cycles are
+        required beyond the end of the requested cache line. However, there is virtually no 
+        penalty in pre-filling the FIFO with data; if a new cache line has to be fetched, 
+        the FIFO can simply be reset and all pointers zeroed. 
+        
+        Thus, the architecture of an OPI read is as follows:
+        
+        * When BUS/STB are asserted:
+           - capture bus_adr, and compare against the *next read* address pointer
+              - if they match, allow the read machine to do the work
+           
+           - if bus_adr and next read address don't match, save to next read address pointer, and 
+             cycle wr/rd clk for 5 cycle while asserting reset to reset the FIFO
+           - initiate an 8DTRD with the read address pointer
+           - wait the specified dummy cycles
+           
+           - greedily pre-fill the FIFO by continuing to clock DQS until either:
+             - the FIFO is full
+             - pre-fetch is aborted because bus_adr and next read address don't match and FIFO is reset
+        
+           - while CTI==2, assemble data into 32-bit words as soon as EMPTY is deasserted,
+             present a bus_ack, and increment the next read address pointer
+           - when CTI==7, ack the data, and wait until the next bus cycle with CTI==2 to resume
+             reading
+        
+        A FIFO_SYNC_MACRO is used to instatiate the FIFO. This is chosen because:
+           - we can specify RAMB18's, which seem to be under-utilized by the auto-inferred memories by migen
+           - the XPM_FIFO_ASYNC macro claims no instantiation support, and also looks like it has weird
+             requirements for resetting the pointers: you must check the reset outputs, and the time to
+             reset is reported to be as high as around 200ns (anecdotally -- could be just that the sim I
+             read on the web is using a really slow clock, but I'm guessing it's around 10 cycles). 
+           - the FIFO_SYNC_MACRO has a well-specified fixed reset latency of 5 cycles.
+           - The main downside of FIFO_SYNC_MACRO over XPM_FIFO_ASYNC is that XPM_FIFO_ASYNC could allow
+             for output data to be read at 32-bit widths, with writes at 16-bit widths -- this means in
+             the case that the FIFO is already full and a cache line hits, we could fill the cache line
+             at full bus speed, whereas with a 16-bit read width we can only fill the cache line at half
+             bus speed. One possible solution to this is to double the width of the FIFO_SYNC_MACRO and 
+             require more clocks on the DQS strobe to fill the FIFO. This will increase the latency
+             from a new address by 1-2 cycles, at the benefit of improving the readout speed on a hit
+             by 2x.
         """)
 
         # PHY machine mux --------------------------------------------------------------------------
@@ -263,7 +315,6 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         # cs_n - both
         # ecs_n - OPI
         # clk_en - both
-        # self.comb += self.spi_mode.eq(~self.config.fields.opi_mode) ## THIS SELECTION NOW HAPPENS AT MAC LEVEL
 
         spicount = Signal(5)
         spi_so = Signal(8) # this internal to the machine
@@ -345,19 +396,23 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         opiphy.act("IDLE",
                    If(opi_req_tx & ~has_dummy,
                       NextState("IDLE"),
+                      NextValue(self.tx, 1),
                       NextValue(opi_clk_en, 1),
                       NextValue(self.do, opi_do),
                       NextValue(opi_ack, 1),
                    ).Elif(opi_req_tx & has_dummy,
+                          NextValue(self.tx, 1),
                           NextState("DUMMY"),
                           NextValue(opi_clk_en, 1),
                           NextValue(self.do, opi_do),
-                          NextValue(opicount, self.config.fields.dummy),
+                          NextValue(opicount, self.config.fields.dummy - 1),
                           NextValue(opi_ack, 0),
                    ).Elif(opi_req_rx, # note: there are no valid RX cycles followed by a dummy, so we ignore that input
+                          NextValue(self.tx, 0),
                           NextState("RX_PIPE"),
                           NextValue(opi_clk_en, 1),
                    ).Else(
+                       NextValue(self.tx, 0),
                        NextValue(opi_clk_en, 0),
                        NextValue(opi_ack, 0),
                        NextValue(opicount, 0),
@@ -374,11 +429,12 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                    )
         )
         opiphy.act("DUMMY", # note, once in dummy, the next cycle must either be an opi_req_rx, or idle
-                   If(opicount > 1,
+                   NextValue(self.tx, 0),
+                   If(opicount > 0,
                       NextValue(opicount, opicount-1),
                       NextValue(self.do, 0),
                       NextValue(opi_clk_en, 1),
-                   ).Elif(opicount <= 1 & opi_req_rx,
+                   ).Elif(opicount == 0 & opi_req_rx,
                           NextState("RX_PIPE"),
                           NextValue(opi_clk_en, 1),
                           NextValue(opi_ack, 1),
@@ -395,15 +451,10 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         write_from_dev=True,
         fields=[
             CSRField("rdid", size=1, description="Issue a RDID command & update id register"),
-            CSRField("wrcr2_00", size=1, description="Write config register 2 address with cr2_00"),
             CSRField("wakeup", size=1, description="Sequence through init & wakeup routine"),
         ])
         self.id = CSRStatus(description="ID code of FLASH, need to issue rdid command first", fields=[
             CSRField("id", size=24, description="ID code of the device")
-        ])
-        self.cr2_00 = CSRStorage(description="Data to write to CR2", fields=[
-            CSRField("sopi", size=1, description="STR OPI enable (do not use with this PHY)"),
-            CSRField("dopi", size=1, description="DTR OPI enable"),
         ])
         # TODO: implement ECC detailed register readback, CRC checking
 
@@ -411,9 +462,6 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         d_to_wb = Signal(32) # data going back to wishbone
         mac_count = Signal(5)
         new_cycle = Signal(1)
-        self.sync += [ # used below to detect if we're just entering a burst, or continuing a previous burst
-            If((self.bus.cyc == 1) & (self.bus.stb == 1), new_cycle.eq(0)).Else(new_cycle.eq(1))
-        ]
         self.submodules.mac = mac = FSM(reset_state="RESET")
         mac.act("RESET",
                 NextValue(self.spi_mode, 1),
@@ -428,48 +476,103 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                 NextValue(opi_req_rx, 0),
                 NextValue(mac_count, 0),
                 NextValue(self.bus.ack, 0),
-                NextValue(new_cycle, 1),
                 NextState("WAKEUP_PRE"),
+                NextValue(new_cycle, 1),
         )
         mac.act("IDLE",
                 NextValue(self.bus.ack, 0),
+                If( self.bus.stb == 0,
+                    NextValue(new_cycle, 1)
+                ),
                 If((self.bus.cyc == 1) & (self.bus.stb == 1) & (self.bus.we == 0) & (self.bus.cti != 7), # read cycle requested, not end-of-burst
                    If( (rom_addr[2:] != self.bus.adr) & new_cycle,
                       NextValue(rom_addr, Cat(Signal(2, reset=0), self.bus.adr)),
                       NextValue(addr_updated, 1),
                       NextValue(cs_n, 1), # raise CS in anticipation of a new address cycle
-                      NextState("SPI_READ_32_A0"),
+
+                      NextValue(new_cycle, 0),
+                      If(self.spi_mode,
+                         NextValue(mac_count, 3),
+                         NextState("SPI_READ_32_CS")
+                      ).Else(
+                         NextValue(mac_count, 0),
+                         NextState("OPI_READ_32_CS")
+                      )
                    ).Elif( (rom_addr[2:] == self.bus.adr) | (~new_cycle & self.bus.cti == 2),
-                           NextValue(mac_count, 3),  # get another beat of 4 bytes at the next address
-                           NextState("SPI_READ_32")
+                           If(self.spi_mode,
+                              NextValue(mac_count, 3),  # get another beat of 4 bytes at the next address
+                              NextState("SPI_READ_32")
+                           ).Else(
+                               NextValue(opi_req_rx, 1),
+                               NextState("OPI_READ_32_D")
+                           )
                    ).Else(
                        NextValue(addr_updated, 0),
                        NextValue(cs_n, 0),
+                       If(~self.spi_mode,
+                          NextValue(opi_req_rx, 1),
+                          NextState("OPI_READ_32_D"),
+                       ).Else(
+                           # assume: cs_n is low, and address is in the right place
+                           NextState("SPI_READ_32"),
+                           NextValue(mac_count, 3), # prep the MAC state counter to count out 4 bytes
+                       )
                    ),
-
-                   If(self.config.fields.opi_mode,
-                      NextState("OPI_8DTRD_32")
-                   ).Else(
-                       # assume: cs_n is low, and address is in the right place
-                       NextState("SPI_READ_32"),
-                       NextValue(mac_count, 3), # prep the MAC state counter to count out 4 bytes
-                   )
                 ).Elif(self.command.fields.wakeup,
                        NextValue(cs_n, 1),
                        NextValue(self.command.storage, 0),  # clear all pending commands
                        NextState("WAKEUP_PRE"),
-                ).Elif(self.command.fields.wrcr2_00,
-                       NextValue(cs_n, 1),
-                       NextValue(self.command.storage, 0),
-                       NextState("WRCR2_00")
                 )
         )
-        mac.act("OPI_8DTRD_32",
-                # gutter for now
+
+        #---------  OPI read machine ------------------------------
+        mac.act("OPI_READ_32_D",
+               NextValue(d_to_wb, Cat(d_to_wb[16:],opi_di)),
+               NextValue(rom_addr, rom_addr + 2),
+               NextState("OPI_READ_32_DLO"),
         )
-        mac.act("WRCR2_00",
-                # gutter for now
+        mac.act("OPI_READ_32_DLO",
+                NextValue(d_to_wb, Cat(d_to_wb[16:], opi_di)),
+                NextValue(self.bus.ack, 1),
+                NextValue(rom_addr, rom_addr + 2),
+                NextValue(opi_req_rx, 0),
+                NextState("IDLE")
         )
+        mac.act("OPI_READ_32_CS",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextState("OPI_READ_32_A0")
+                )
+        )
+        mac.act("OPI_READ_32_A0",
+                NextValue(opi_do,0xEE11),
+                NextValue(opi_req_tx, 1),
+                NextState("OPI_READ_32_A1"),
+        )
+        mac.act("OPI_READ_32_A1",
+                  NextValue(opi_do,rom_addr[16:] & 0x07FF), # mask off unused bits
+                  NextState("OPI_READ_32_A2"),
+        )
+        mac.act("OPI_READ_32_A2",
+                  NextValue(opi_do,rom_addr[:16]),
+                   NextValue(has_dummy, 1),
+                   NextState("OPI_READ_32_ACKWAIT"),
+        )
+        mac.act("OPI_READ_32_ACKWAIT",
+                NextValue(has_dummy, 0),
+                NextValue(opi_req_tx, 0),
+                NextState("OPI_READ_32_DUMMY")
+        )
+        mac.act("OPI_READ_32_DUMMY",
+                If(opi_ack,
+                   NextValue(opi_req_rx, 1),
+                   NextState("OPI_READ_32_D"),
+                )
+        )
+
+
+        #---------  wakup chip ------------------------------
         mac.act("WAKEUP_PRE",
                 NextValue(cs_n, 1), # why isn't this sticking? i shouldn't have to put this here
                 NextValue(mac_count, 4),
@@ -478,33 +581,145 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         mac.act("WAKEUP_PRE_CS_WAIT",
                 NextValue(mac_count, mac_count-1),
                 If(mac_count == 0,
-                   NextState("WAKEUP_2"),
+                   NextState("WAKEUP_WUP"),
                    NextValue(cs_n, 0),
                 )
         )
-        mac.act("WAKEUP_2",
+        mac.act("WAKEUP_WUP",
                 NextValue(mac_count, mac_count-1),
                 If(mac_count == 0,
                    NextValue(cs_n, 0),
                    NextValue(spi_do, 0xab),  # wakeup from deep sleep
                    NextValue(spi_req, 1),
-                   NextState("WAKEUP_3"),
+                   NextState("WAKEUP_WUP_WAIT"),
                 )
         )
-        mac.act("WAKEUP_3",
+        mac.act("WAKEUP_WUP_WAIT",
                 NextValue(spi_req, 0),
                 If(spi_ack,
                    NextValue(cs_n, 1),  # raise CS
                    NextValue(mac_count, 4),  # for >4 cycles per specsheet
-                   NextState("WAKEUP_4")
-                   )
+                   NextState("WAKEUP_CR2_WREN_1")
+                )
         )
-        mac.act("WAKEUP_4",
+
+        #---------  WREN+CR2 - dummy cycles ------------------------------
+        mac.act("WAKEUP_CR2_WREN_1",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextValue(spi_do, 0x06),  # WREN to unlock CR2 writing
+                   NextValue(spi_req, 1),
+                   NextState("WAKEUP_CR2_WREN_1_WAIT"),
+                )
+        )
+        mac.act("WAKEUP_CR2_WREN_1_WAIT",
+                NextValue(spi_req, 0),
+                If(spi_ack,
+                   NextValue(cs_n, 1),
+                   NextValue(mac_count, 4),
+                   NextState("WAKEUP_CR2_DUMMY_CMD"),
+                )
+        )
+        mac.act("WAKEUP_CR2_DUMMY_CMD",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextValue(spi_do, 0x72), # CR2 command
+                   NextValue(spi_req, 1),
+                   NextValue(mac_count, 2),
+                   NextState("WAKEUP_CR2_DUMMY_ADRHI"),
+                )
+        )
+        mac.act("WAKEUP_CR2_DUMMY_ADRHI",
+                NextValue(spi_do, 0x00),   # we want to send 00_00_03_00
+                If(spi_ack,
+                   NextValue(mac_count, mac_count -1),
+                ),
+                If(mac_count == 0,
+                   NextState("WAKEUP_CR2_DUMMY_ADRMID")
+                )
+        )
+        mac.act("WAKEUP_CR2_DUMMY_ADRMID",
+                NextValue(spi_do, 0x03),
+                If(spi_ack, NextState("WAKEUP_CR2_DUMMY_ADRLO")),
+        )
+        mac.act("WAKEUP_CR2_DUMMY_ADRLO",
+                NextValue(spi_do, 0x00),
+                If(spi_ack, NextState("WAKEUP_CR2_DUMMY_DATA")),
+        )
+        mac.act("WAKEUP_CR2_DUMMY_DATA",
+                NextValue(spi_do, 0x05),   # 10 dummy cycles as required for 84MHz-104MHz operation
+                If(spi_ack, NextState("WAKEUP_CR2_DUMMY_WAIT")),
+        )
+        mac.act("WAKEUP_CR2_DUMMY_WAIT",
+                NextValue(spi_req, 0),
+                If(spi_ack,
+                   NextValue(cs_n, 1),
+                   NextValue(mac_count, 4),
+                   NextState("WAKEUP_CR2_WREN_2")
+                )
+        )
+
+        #---------  WREN+CR2 to DOPI mode ------------------------------
+        mac.act("WAKEUP_CR2_WREN_2",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextValue(spi_do, 0x06),  # WREN to unlock CR2 writing
+                   NextValue(spi_req, 1),
+                   NextState("WAKEUP_CR2_WREN_2_WAIT"),
+                )
+        )
+        mac.act("WAKEUP_CR2_WREN_2_WAIT",
+                NextValue(spi_req, 0),
+                If(spi_ack,
+                   NextValue(cs_n, 1),
+                   NextValue(mac_count, 4),
+                   NextState("WAKEUP_CR2_DOPI_CMD"),
+                )
+        )
+        mac.act("WAKEUP_CR2_DOPI_CMD",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextValue(spi_do, 0x72),  # CR2 command
+                   NextValue(spi_req, 1),
+                   NextValue(mac_count, 4),
+                   NextState("WAKEUP_CR2_DOPI_ADR"),
+                )
+        )
+        mac.act("WAKEUP_CR2_DOPI_ADR",  # send 0x00_00_00_00 as address
+                NextValue(spi_do, 0x00),  # no need to raise CS or lower spi_req, this is back-to-back
+                If(spi_ack,
+                   NextValue(mac_count, mac_count - 1),
+                ),
+                If(mac_count == 0,
+                   NextState("WAKEUP_CR2_DOPI_DATA"),
+                )
+        ),
+        mac.act("WAKEUP_CR2_DOPI_DATA",
+                NextValue(spi_do, 2),    # enable DOPI mode
+                If(spi_ack, NextState("WAKEUP_CR2_DOPI_WAIT")),
+        )
+        mac.act("WAKEUP_CR2_DOPI_WAIT", # trailing CS wait
+                NextValue(spi_req, 0),
+                If(spi_ack,
+                   NextValue(cs_n, 1),
+                   NextValue(mac_count, 4),
+                   NextState("WAKEUP_CS_EXIT")
+                )
+        )
+        mac.act("WAKEUP_CS_EXIT",
+                NextValue(self.spi_mode, 0),  # now enter DOPI mode
                 NextValue(mac_count, mac_count-1),
                 If(mac_count == 0,
                    NextState("IDLE"),
                 )
         )
+
+
+        #---------  SPI read machine ------------------------------
         mac.act("SPI_READ_32",
                 If(addr_updated,
                    NextState("SPI_READ_32_CS"),
@@ -639,7 +854,52 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
             )
         ]
 
-
+"""
+        ### THIS IS A BAD IDEA -- CR1 takes 40ms to write! too long on the boot. these states archived
+        #---------  WREN+CR1 ------------------------------
+        mac.act("WAKEUP_CR1_WREN",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextValue(spi_do, 0x06),  # WREN to unlock CR1 writing
+                   NextValue(spi_req, 1),
+                   NextState("WAKEUP_CR1_WREN_WAIT")
+                )
+        )
+        mac.act("WAKEUP_CR1_WREN_WAIT",
+                NextValue(spi_req, 0),
+                If(spi_ack,
+                   NextValue(cs_n, 1),
+                   NextValue(mac_count, 4),
+                   NextState("WAKEUP_CR1_1")
+                )
+        )
+        mac.act("WAKEUP_CR1_1",
+                NextValue(mac_count, mac_count-1),
+                If(mac_count == 0,
+                   NextValue(cs_n, 0),
+                   NextValue(spi_do, 0x01),  # write config sequence
+                   NextValue(spi_req, 1),
+                   NextState("WAKEUP_CR1_3")
+                )
+        )
+        mac.act("WAKEUP_CR1_3",
+                NextValue(spi_do, 0x00),
+                If(spi_ack, NextState("WAKEUP_CR1_4")),
+        )
+        mac.act("WAKEUP_CR1_4",
+                NextValue(spi_do, 0x13),  # set to 41 ohms drive strength, PRE enabled
+                If(spi_ack, NextState("WAKEUP_CR1_8")),
+        )
+        mac.act("WAKEUP_CR1_8",
+                NextValue(spi_req, 0),
+                If(spi_ack,
+                   NextValue(cs_n, 1),
+                   NextValue(mac_count, 4),
+                   NextState("WAKEUP_CR2_WREN_2"),
+                )
+        )
+"""
 
 
 class SPINOR(Module, AutoCSR):
