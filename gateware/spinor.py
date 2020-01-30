@@ -6,7 +6,7 @@ from migen.genlib.cdc import MultiReg
 
 class SpiOpi(Module, AutoCSR, AutoDoc):
     def __init__(self, pads, dq_delay_taps=31, sclk_name="SCLK_ODDR",
-                 iddr_name="SPI_IDDR", miso_name="MISO_FDRE", sim=False, spiread=False):
+                 iddr_name="SPI_IDDR", miso_name="MISO_FDRE", sim=False, spiread=False, prefetch_lines=1):
         self.intro = ModuleDoc("""
         SpiOpi implements a dual-mode SPI or OPI interface. OPI is an octal (8-bit) wide
         variant of SPI, which is unique to Macronix parts. It is concurrently interoperable
@@ -15,7 +15,13 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         associated with the input data.
         
         The chip by default boots into SPI-only mode (unless NV bits are burned otherwise)
-        so to enable OPI, a config register needs to be written with SPI mode. 
+        so to enable OPI, a config register needs to be written with SPI mode. Note that once
+        the config register is written, the only way to return to SPI mode is to change
+        it with OPI writes, or to issue a hardware reset. This has major implications for
+        reconfiguring the FPGA: a simple JTAG command to reload from SPI will not yank PROG_B low,
+        and so the SPI ROM will be in DOPI, and SPI loading will fail. Thus, system architects
+        must take into consideration a hard reset for the ROM whenever a bitstream reload
+        is demanded of the FPGA. 
         
         The SpiOpi architecture is split into two levels: a command manager, and a
         cycle manager. The command manager is responsible for taking the current wishbone
@@ -24,7 +30,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         
         In SPI mode, this means marshalling byte-wide requests into a series of 8 serial cyles.
         
-        In OPI mode, this means marshalling 16-bit wide requests into a pair of back-to-back DDR
+        In OPI [DOPI] mode, this means marshalling 16-bit wide requests into a pair of back-to-back DDR
         cycles. Note that because the cycles are DDR, this means one 16-bit wide request must be
         issued every cycle to keep up with the interface. 
         
@@ -38,7 +44,29 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         to a 2.418ns delay is possible between DQS and DQ. The goal is to delay DQS relative
         to DQ, because the SPI chip launches both with concurrent rising edges (to within 0.6ns),
         but the IDDR register needs the rising edge of DQS to be centered inside the DQ eye.
+        
+        In DOPI mode, there is a prefetch buffer. It will read `prefetch_lines` cache lines of 
+        data into the prefetch buffer. A cache line is 256 bits (or 8x32-bit words). The maximum 
+        value is 63 lines (one line is necessary for synchronization margin). The downside of
+        setting prefetch_lines high is that the prefetcher is running constantly and burning
+        power, while throwing away most data. In practice, the CPU will typically consume data
+        at only slightly faster than the rate of read-out from DOPI-mode ROM, and once data
+        is consumed the prefetch resumes. Thus, prefetch_lines is probably optimally around
+        1-3 lines read-ahead of the CPU. Any higher than 3 lines probably just wastes power.
+        In short simulations, 1 line of prefetch seems to be enough to keep the prefetcher
+        ahead of the CPU even when it's simply running straight-line code.
+        
+        Note the "sim" parameter exists because there seems to be a bug in xvlog that doesn't
+        correctly simulate the IDELAY machines. Setting "sim" to True removes the IDELAY machines
+        and passes the data through directly, but in real hardware the IDELAY machines are
+        necessary to meet timing between DQS and DQ.  
+        
+        dq_delay_taps probably doesn't need to be adjusted; it can be tweaked for timing
+        closure. The delays can also be adjusted at runtime.
         """)
+        if prefetch_lines > 63:
+            prefetch_lines = 63
+
         self.spi_mode = Signal(reset=1) # when reset is asserted, force into spi mode
         cs_n = Signal(reset=1) # make sure CS is sane on reset, too
 
@@ -46,19 +74,9 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
             CSRField("dummy", size=5, description="Number of dummy cycles", reset=10),
         ])
 
-        delay_type="VAR_LOAD" # FIXED for timing closure analysis; change to "VAR_LOAD" for production if runtime adjustments are needed
+        delay_type="VAR_LOAD"
 
         # DQS input conditioning -----------------------------------------------------------------
-        # dqs_delayed = Signal()
-        # self.dqs_delay_config = CSRStorage(fields=[
-        #     CSRField("d", size=5, description="Delay amount; each increment is 78ps"),
-        #     CSRField("load", size=1, description="Set delay taps to delay_d"),
-        #     CSRField("inc", size=1, description="`1` increments delay, `0` decrements delay when CE is pulsed"),
-        #     CSRField("ce", size=1, pulse=True, description="Writing to this register changes increment according to inc"),
-        # ])
-        # self.dqs_delay_status = CSRStatus(fields=[
-        #     CSRField("q", size=5, description="Readback of current delay amount, useful if inc/ce is used to set"),
-        # ])
         dqs_iobuf = Signal()
         self.clock_domains.cd_dqs = ClockDomain(reset_less=True)
         self.comb += self.cd_dqs.clk.eq(dqs_iobuf)
@@ -255,7 +273,12 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         Because of the latency involved in going from pin->IDDR->FIFO, excess read cycles are
         required beyond the end of the requested cache line. However, there is virtually no 
         penalty in pre-filling the FIFO with data; if a new cache line has to be fetched, 
-        the FIFO can simply be reset and all pointers zeroed. 
+        the FIFO can simply be reset and all pointers zeroed. In fact, pre-filling the FIFO
+        can lead to great performance benefits if sequential cache lines are requested. In
+        simulation, a cache line can be filled in 10 bus cycles if it happens to be prefetched
+        (as opposed to 49 bus cycles for random reads). Either way, this compares favorably to
+        288 cycles for random reads in 100MHz SPI mode (or 576 for the spimemio.v, which runs at 
+        50MHz).   
         
         The command controller is repsonsible for sequencing all commands other than fast reads. Most
         commands have some special-case structure to them, and as more commands are implemented, the
@@ -288,21 +311,17 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
            - when CTI==7, ack the data, and wait until the next bus cycle with CTI==2 to resume
              reading
         
-        A FIFO_SYNC_MACRO is used to instatiate the FIFO. This is chosen because:
+        A FIFO_SYNC_MACRO is used to instantiate the FIFO. This is chosen because:
            - we can specify RAMB18's, which seem to be under-utilized by the auto-inferred memories by migen
            - the XPM_FIFO_ASYNC macro claims no instantiation support, and also looks like it has weird
              requirements for resetting the pointers: you must check the reset outputs, and the time to
              reset is reported to be as high as around 200ns (anecdotally -- could be just that the sim I
              read on the web is using a really slow clock, but I'm guessing it's around 10 cycles). 
            - the FIFO_SYNC_MACRO has a well-specified fixed reset latency of 5 cycles.
-           - The main downside of FIFO_SYNC_MACRO over XPM_FIFO_ASYNC is that XPM_FIFO_ASYNC could allow
-             for output data to be read at 32-bit widths, with writes at 16-bit widths -- this means in
-             the case that the FIFO is already full and a cache line hits, we could fill the cache line
-             at full bus speed, whereas with a 16-bit read width we can only fill the cache line at half
-             bus speed. One possible solution to this is to double the width of the FIFO_SYNC_MACRO and 
-             require more clocks on the DQS strobe to fill the FIFO. This will increase the latency
-             from a new address by 1-2 cycles, at the benefit of improving the readout speed on a hit
-             by 2x.
+           - The main downside of FIFO_SYNC_MACRO over XPM_FIFO_ASYNC is that XPM_FIFO_ASYNC can automatically 
+             allow for output data to be read at 32-bit widths, with writes at 16-bit widths. However, with a
+             bit of additional logic and pipelining, we can aggregate data into 32-bit words going into a
+             32-bit FIFO_SYNC_MACRO, which is what we do in this implementation. 
         """)
         self.bus = wishbone.Interface()
 
@@ -378,7 +397,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
             # Direct FIFO primitive is more resource-efficient and faster than migen primitive.
             Instance("FIFO_DUALCLOCK_MACRO",
                      p_DEVICE="7SERIES", p_FIFO_SIZE="18Kb", p_DATA_WIDTH=32, p_FIRST_WORD_FALL_THROUGH="TRUE",
-                     p_ALMOST_EMPTY_OFFSET=6, p_ALMOST_FULL_OFFSET=4,
+                     p_ALMOST_EMPTY_OFFSET=6, p_ALMOST_FULL_OFFSET=(512- (8*prefetch_lines)),
 
                      o_ALMOSTEMPTY=rx_almostempty, o_ALMOSTFULL=rx_almostfull,
                      o_DO=opi_fifo_rd, o_EMPTY=rx_empty, o_FULL=rx_full,
@@ -393,16 +412,11 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
         #---------  OPI Rx Phy machine ------------------------------
         self.submodules.rxphy = rxphy = FSM(reset_state="IDLE")
         cti_pipe = Signal(3)
-        self.sync += cti_pipe.eq(self.bus.cti)
-        last_read = Signal()
         rxphy_cnt = Signal(3)
         rxphy.act("IDLE",
                   If(self.spi_mode,
                      NextState("IDLE"),
                   ).Else(
-                      If((cti_pipe == 2) & (self.bus.cti == 7),
-                         NextValue(last_read, 1),
-                      ),
                       NextValue(self.bus.ack, 0),
                       If(opi_reset_rx_req,
                          NextState("WAIT_RESET"),
@@ -411,9 +425,9 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                          NextValue(rx_fifo_rst, 1),
                       ).Elif(opi_rx_run,
                               NextValue(rx_wren, 1),
-                              If( (self.bus.cyc & self.bus.stb & ~self.bus.we) & ((self.bus.cti == 2) | last_read),
+                              If( (self.bus.cyc & self.bus.stb & ~self.bus.we) & ((self.bus.cti == 2) |
+                                 ((self.bus.cti == 7) & ~self.bus.ack) ), # handle case of non-pipelined read, ack is late
                                  If(~rx_empty,
-                                    NextValue(last_read, 0),
                                     NextValue(self.bus.dat_r, opi_fifo_rd),
                                     rx_rden.eq(1),
                                     NextValue(opi_addr, opi_addr + 4),
@@ -515,7 +529,7 @@ class SpiOpi(Module, AutoCSR, AutoDoc):
                          NextValue(opi_reset_rx_req, 1),
                          NextState("TX_RESET_RX"),
                      ).Else(
-                          If(tx_almostfull,
+                          If(tx_almostfull & ~self.bus.ack,
                              NextValue(txphy_clken, 0)
                           ).Else(
                              NextValue(txphy_clken, 1)

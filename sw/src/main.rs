@@ -278,7 +278,7 @@ impl Repl {
         let time: u32 = readpac32!(self, TICKTIMER, time3, time2, time1, time0);
     
         let mut sum: u32 = 0;
-        for i in 0..0x4_0000 {  // 256k words, or 1 megabyte
+        for i in 0x0..0x4_0000 {  // 256k words, or 1 megabyte
             unsafe{ sum += (*SPI_MEM)[i]; }
         }
 

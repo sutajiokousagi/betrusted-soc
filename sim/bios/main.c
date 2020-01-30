@@ -1071,8 +1071,8 @@ int main(int i, char **c)
     int j;
     volatile unsigned int *rom = (volatile unsigned int *)SPIFLASH_BASE;
 
-    // sequential read of 24 words starting at 0; this should be 3 cache lines (8 x 32-bit words cache line)
-    for( j = 0; j < 24; j ++ ) {
+    // sequential read of 64 words starting at 0; this should be 8 cache lines (8 x 32-bit words cache line)
+    for( j = 0; j < 64; j ++ ) {
       dest[j] = rom[j];
     }
     // do a simple read
